@@ -4,6 +4,8 @@
 pointer — mockup previews in the Style menu, then a real Adwaita recolor Hyprland
 and GTK can load.**
 
+![OmaCursor on Hackerman — live Adwaita recolor on an empty workspace](preview.png)
+
 Stock Omarchy paints Hyprland, the terminal, and (with Chroma) your GTK apps.
 The mouse cursor stays default Adwaita black/white in every theme. Your desktop
 wears Hackerman neon; the pointer still looks like a stock GNOME install.
@@ -12,6 +14,8 @@ OmaCursor closes that gap the same way Style → OBS Themes works: a labelled
 image picker, one mockup per installed theme, and an apply step that writes
 what the compositor understands. Pick once, or let `omarchy theme set` keep
 cursors in lockstep forever after.
+
+![Style → Cursors mockup for Hackerman — same palette, picker art](mockup.png)
 
 ## Goals (and honest limits)
 
