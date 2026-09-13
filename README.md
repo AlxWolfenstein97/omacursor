@@ -182,6 +182,9 @@ bash ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/check.sh
   [OmaVT](https://github.com/AlxWolfenstein97/omavt),
   [OmaTTY](https://github.com/AlxWolfenstein97/omatty),
   [Chroma](https://github.com/AlxWolfenstein97/chroma).
+- [OMCP](https://github.com/btsouth/omarchy-omcp) — MCP desktop bridge (themes,
+  workspaces, screenshots, …). Helped land the Hackerman preview shot here:
+  `omarchy plugin add https://github.com/btsouth/omarchy-omcp --enable`
 - [Omarchy](https://omarchy.org/) — theme pipeline, Style menu image picker, and
   `theme-set` hooks this plugin hooks into.
 - Stock shapes from GNOME’s Adwaita cursors (`adwaita-cursors`).
