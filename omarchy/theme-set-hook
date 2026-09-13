@@ -1,0 +1,10 @@
+#!/bin/bash
+# omacursor theme-set hook — keep cursors in step with the desktop theme.
+set -uo pipefail
+
+PLUGIN="${OMACURSOR_PLUGIN_DIR:-$HOME/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor}"
+SYNC="$PLUGIN/bin/omacursor-sync"
+
+[[ -x $SYNC ]] || exit 0
+"$SYNC" --quiet >/dev/null 2>&1 || true
+exit 0

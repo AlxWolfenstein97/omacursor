@@ -1,0 +1,323 @@
+#!/usr/bin/python3
+"""omacursor-sync-sddm — publish user Omarchy cursors for SDDM + refresh wiring.
+
+Must run as root (sudo -n from omacursor apply when sddm-linked).
+
+NEVER touches /usr/share/icons/Adwaita/ — that circular symlink broke GTK/Qt.
+Instead we publish Omarchy and a self-contained /usr/share/icons/default/cursors.
+"""
+
+from __future__ import annotations
+
+import os
+import pwd
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+CONF = Path("/etc/sddm.conf.d/99-omacursor.conf")
+SUDOERS = Path("/etc/sudoers.d/omacursor_sddm")
+SYSTEM_ICONS = Path("/usr/share/icons/Omarchy")
+DEFAULT_DIR = Path("/usr/share/icons/default")
+DEFAULT_THEME = DEFAULT_DIR / "index.theme"
+DEFAULT_BAK = DEFAULT_DIR / "index.theme.omacursor-bak"
+DEFAULT_CURSORS = DEFAULT_DIR / "cursors"
+ADWAITA_CURSORS = Path("/usr/share/icons/Adwaita/cursors")
+ADWAITA_CURSORS_BAK = Path("/usr/share/icons/Adwaita/cursors.omacursor-stock")
+SDDM_HOME_ICONS = Path("/var/lib/sddm/.icons/default/index.theme")
+LIBDIR = Path("/usr/local/lib/omacursor")
+COMPOSITOR = LIBDIR / "sddm-compositor"
+HYPR_CFG = Path("/etc/sddm/omacursor-hyprland.lua")
+LOG = Path("/var/log/omacursor-sddm.log")
+
+HYPR_LUA = """\
+-- Managed by OmaCursor. Based on Omarchy's /usr/share/sddm/hyprland.lua.
+hl.env("XCURSOR_THEME", "Omarchy")
+hl.env("XCURSOR_SIZE", "{size}")
+
+hl.config({{
+  misc = {{
+    disable_hyprland_logo = true,
+    disable_splash_rendering = true,
+    force_default_wallpaper = 0,
+  }},
+
+  animations = {{
+    enabled = false,
+  }},
+}})
+
+hl.exec_cmd("hyprctl setcursor Omarchy {size}")
+"""
+
+COMPOSITOR_SH = """\
+#!/bin/bash
+# Managed by OmaCursor — SDDM Wayland compositor wrapper.
+export XCURSOR_THEME=Omarchy
+export XCURSOR_SIZE={size}
+{{
+  printf '%s pid=%s XCURSOR_THEME=%s config=%s\\n' \\
+    "$(date -Is)" "$$" "$XCURSOR_THEME" /etc/sddm/omacursor-hyprland.lua
+}} >>/var/log/omacursor-sddm.log 2>/dev/null || true
+exec /usr/bin/start-hyprland -- --config /etc/sddm/omacursor-hyprland.lua
+"""
+
+
+def invoking_home() -> Path:
+    user = os.environ.get("SUDO_USER")
+    if not user and os.environ.get("PKEXEC_UID", "").isdigit():
+        try:
+            user = pwd.getpwuid(int(os.environ["PKEXEC_UID"])).pw_name
+        except KeyError:
+            user = None
+    if user:
+        try:
+            return Path(pwd.getpwnam(user).pw_dir)
+        except KeyError:
+            pass
+    for marker in sorted(Path("/home").glob("*/.local/state/omarchy/omacursor/sddm-linked")):
+        return marker.parents[4]
+    return Path("/nonexistent")
+
+
+def resolve_src(home: Path) -> Path | None:
+    stable = home / ".local/share/icons/Omarchy"
+    if stable.is_symlink():
+        target = Path(os.readlink(stable))
+        if not target.is_absolute():
+            target = stable.parent / target
+        if target.is_dir():
+            return target
+    if stable.is_dir():
+        return stable
+    for slot in ("Omarchy-a", "Omarchy-b"):
+        candidate = home / ".local/share/icons" / slot
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _write_index(path: Path, name: str) -> None:
+    path.write_text(
+        (
+            "[Icon Theme]\n"
+            f"Name={name}\n"
+            "Comment=OmaCursor recolor of Adwaita for SDDM + session\n"
+            "Example=left_ptr\n"
+            "Inherits=hicolor\n"
+        ),
+        encoding="utf-8",
+    )
+
+
+def publish(src: Path) -> None:
+    staging_root = Path(tempfile.mkdtemp(prefix="omacursor-sddm-"))
+    try:
+        dest = staging_root / "Omarchy"
+        shutil.copytree(src, dest, symlinks=True)
+        _write_index(dest / "index.theme", "Omarchy")
+        if SYSTEM_ICONS.exists() or SYSTEM_ICONS.is_symlink():
+            if SYSTEM_ICONS.is_dir() and not SYSTEM_ICONS.is_symlink():
+                shutil.rmtree(SYSTEM_ICONS)
+            else:
+                SYSTEM_ICONS.unlink()
+        shutil.move(str(dest), str(SYSTEM_ICONS))
+        os.chmod(SYSTEM_ICONS, 0o755)
+        for root, dirs, files in os.walk(SYSTEM_ICONS):
+            for d in dirs:
+                os.chmod(Path(root) / d, 0o755)
+            for f in files:
+                path = Path(root) / f
+                if not path.is_symlink():
+                    os.chmod(path, 0o644)
+    finally:
+        shutil.rmtree(staging_root, ignore_errors=True)
+
+
+def ensure_adwaita_not_hijacked() -> None:
+    """Undo the v1.1.3 mistake if a previous sync left Adwaita broken."""
+    if ADWAITA_CURSORS.is_symlink():
+        ADWAITA_CURSORS.unlink()
+    if ADWAITA_CURSORS_BAK.is_dir() and not ADWAITA_CURSORS.exists():
+        ADWAITA_CURSORS_BAK.rename(ADWAITA_CURSORS)
+
+
+def point_system_default() -> None:
+    """Self-contained default theme (cursors/) — do NOT touch Adwaita."""
+    ensure_adwaita_not_hijacked()
+
+    DEFAULT_DIR.mkdir(parents=True, exist_ok=True)
+    if DEFAULT_THEME.is_file() and not DEFAULT_BAK.is_file():
+        shutil.copy2(DEFAULT_THEME, DEFAULT_BAK)
+
+    # Full cursor tree under default/ so "default" works without inheriting Adwaita.
+    if DEFAULT_CURSORS.exists() or DEFAULT_CURSORS.is_symlink():
+        if DEFAULT_CURSORS.is_dir() and not DEFAULT_CURSORS.is_symlink():
+            shutil.rmtree(DEFAULT_CURSORS)
+        else:
+            DEFAULT_CURSORS.unlink()
+    shutil.copytree(SYSTEM_ICONS / "cursors", DEFAULT_CURSORS, symlinks=True)
+
+    DEFAULT_THEME.write_text(
+        (
+            "[Icon Theme]\n"
+            "# Managed by OmaCursor — self-contained cursors/ (Adwaita untouched)\n"
+            "Name=default\n"
+            "Comment=OmaCursor SDDM/default cursor theme\n"
+            "Example=left_ptr\n"
+            "Inherits=hicolor\n"
+        ),
+        encoding="utf-8",
+    )
+    os.chmod(DEFAULT_THEME, 0o644)
+
+    SDDM_HOME_ICONS.parent.mkdir(parents=True, exist_ok=True)
+    SDDM_HOME_ICONS.write_text(
+        "[Icon Theme]\nName=default\nInherits=hicolor\n",
+        encoding="utf-8",
+    )
+    # Also give the sddm user a cursors tree
+    sddm_cursors = SDDM_HOME_ICONS.parent / "cursors"
+    if sddm_cursors.exists() or sddm_cursors.is_symlink():
+        if sddm_cursors.is_dir() and not sddm_cursors.is_symlink():
+            shutil.rmtree(sddm_cursors)
+        else:
+            sddm_cursors.unlink()
+    shutil.copytree(SYSTEM_ICONS / "cursors", sddm_cursors, symlinks=True)
+    try:
+        pw = pwd.getpwnam("sddm")
+        for path in (
+            Path("/var/lib/sddm/.icons"),
+            Path("/var/lib/sddm/.icons/default"),
+            SDDM_HOME_ICONS,
+        ):
+            if path.exists():
+                os.chmod(path if path.is_dir() else path.parent, 0o755)
+                os.chown(path, pw.pw_uid, pw.pw_gid)
+        for root, dirs, files in os.walk(Path("/var/lib/sddm/.icons")):
+            for d in dirs:
+                os.chown(Path(root) / d, pw.pw_uid, pw.pw_gid)
+            for f in files:
+                p = Path(root) / f
+                if not p.is_symlink():
+                    os.chown(p, pw.pw_uid, pw.pw_gid)
+    except KeyError:
+        pass
+
+
+def ensure_wiring(size: int) -> None:
+    HYPR_CFG.parent.mkdir(parents=True, exist_ok=True)
+    HYPR_CFG.write_text(HYPR_LUA.format(size=size), encoding="utf-8")
+    os.chmod(HYPR_CFG, 0o644)
+
+    LIBDIR.mkdir(parents=True, exist_ok=True)
+    COMPOSITOR.write_text(COMPOSITOR_SH.format(size=size), encoding="utf-8")
+    os.chmod(COMPOSITOR, 0o755)
+
+    LOG.touch(exist_ok=True)
+    os.chmod(LOG, 0o666)
+
+    CONF.parent.mkdir(parents=True, exist_ok=True)
+    CONF.write_text(
+        (
+            "# Generated by OmaCursor — SDDM Wayland/Hyprland cursor wiring.\n"
+            "# Does NOT modify Adwaita. Uses Omarchy + self-contained default/cursors.\n"
+            "[Theme]\n"
+            "CursorTheme=Omarchy\n"
+            f"CursorSize={size}\n"
+            "\n"
+            "[General]\n"
+            f"GreeterEnvironment=XCURSOR_THEME=Omarchy,XCURSOR_SIZE={size}\n"
+            "\n"
+            "[Wayland]\n"
+            f"CompositorCommand={COMPOSITOR}\n"
+        ),
+        encoding="utf-8",
+    )
+    os.chmod(CONF, 0o644)
+
+
+def restore_system_default() -> None:
+    ensure_adwaita_not_hijacked()
+    if DEFAULT_CURSORS.exists() or DEFAULT_CURSORS.is_symlink():
+        if DEFAULT_CURSORS.is_dir() and not DEFAULT_CURSORS.is_symlink():
+            shutil.rmtree(DEFAULT_CURSORS)
+        else:
+            DEFAULT_CURSORS.unlink()
+    if DEFAULT_BAK.is_file():
+        shutil.copy2(DEFAULT_BAK, DEFAULT_THEME)
+        DEFAULT_BAK.unlink()
+    elif DEFAULT_THEME.is_file():
+        DEFAULT_THEME.write_text(
+            "[Icon Theme]\nInherits=Adwaita\n",
+            encoding="utf-8",
+        )
+    if Path("/var/lib/sddm/.icons").exists():
+        shutil.rmtree(Path("/var/lib/sddm/.icons"), ignore_errors=True)
+
+
+def revert() -> None:
+    if SYSTEM_ICONS.exists() or SYSTEM_ICONS.is_symlink():
+        if SYSTEM_ICONS.is_dir() and not SYSTEM_ICONS.is_symlink():
+            shutil.rmtree(SYSTEM_ICONS)
+        else:
+            SYSTEM_ICONS.unlink()
+    restore_system_default()
+    for path in (
+        CONF,
+        HYPR_CFG,
+        COMPOSITOR,
+        SUDOERS,
+        Path("/etc/sudoers.d/omacursor-sddm"),
+        LOG,
+    ):
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+    sync = LIBDIR / "sync-sddm"
+    if sync.is_file():
+        sync.unlink()
+    try:
+        LIBDIR.rmdir()
+    except OSError:
+        pass
+
+
+def main(argv: list[str] | None = None) -> int:
+    if os.geteuid() != 0:
+        print("omacursor-sync-sddm: must run as root (sudo -n ...)", file=sys.stderr)
+        return 1
+
+    args = list(argv if argv is not None else sys.argv[1:])
+    if "--revert" in args:
+        revert()
+        print("omacursor-sync-sddm: reverted", file=sys.stderr)
+        return 0
+
+    home = invoking_home()
+    src = resolve_src(home)
+    if src is None:
+        print(f"omacursor-sync-sddm: no cursor theme under {home}", file=sys.stderr)
+        return 2
+
+    size = 24
+    env_size = os.environ.get("XCURSOR_SIZE")
+    if env_size and env_size.isdigit():
+        size = int(env_size)
+
+    publish(src)
+    point_system_default()
+    ensure_wiring(size)
+    # Keep the installed helper identical to this file
+    try:
+        shutil.copy2(Path(__file__).resolve(), LIBDIR / "sync-sddm")
+        os.chmod(LIBDIR / "sync-sddm", 0o755)
+    except OSError:
+        pass
+    print(f"omacursor-sync-sddm: published {src} → {SYSTEM_ICONS}", file=sys.stderr)
+    print("omacursor-sync-sddm: default/cursors populated; Adwaita left alone", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

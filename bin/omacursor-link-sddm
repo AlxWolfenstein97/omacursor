@@ -1,0 +1,113 @@
+#!/usr/bin/python3
+"""omacursor-link-sddm — one-time SDDM wiring (never touches Adwaita cursors)."""
+from __future__ import annotations
+
+import os
+import pwd
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+SUDOERS = Path("/etc/sudoers.d/omacursor_sddm")
+LIBDIR = Path("/usr/local/lib/omacursor")
+SYNC_BIN = LIBDIR / "sync-sddm"
+ADWAITA_CURSORS = Path("/usr/share/icons/Adwaita/cursors")
+ADWAITA_CURSORS_BAK = Path("/usr/share/icons/Adwaita/cursors.omacursor-stock")
+
+
+def invoking_user() -> tuple[str, Path]:
+    user = os.environ.get("SUDO_USER")
+    if not user and os.environ.get("PKEXEC_UID", "").isdigit():
+        try:
+            user = pwd.getpwuid(int(os.environ["PKEXEC_UID"])).pw_name
+        except KeyError:
+            user = None
+    if not user:
+        print("omacursor-link-sddm: cannot tell who invoked us", file=sys.stderr)
+        sys.exit(1)
+    return user, Path(pwd.getpwnam(user).pw_dir)
+
+
+def ensure_adwaita_restored() -> None:
+    if ADWAITA_CURSORS.is_symlink():
+        ADWAITA_CURSORS.unlink()
+    if ADWAITA_CURSORS_BAK.is_dir() and not ADWAITA_CURSORS.exists():
+        ADWAITA_CURSORS_BAK.rename(ADWAITA_CURSORS)
+        print("omacursor-link-sddm: restored stock Adwaita cursors", file=sys.stderr)
+
+
+def write_sudoers(user: str) -> None:
+    body = (
+        f"# OmaCursor — passwordless SDDM cursor sync for {user}\n"
+        f"{user} ALL=(root) NOPASSWD: {SYNC_BIN}\n"
+    )
+    fd, tmp = tempfile.mkstemp(prefix="omacursor-sudoers-")
+    os.close(fd)
+    tmp_path = Path(tmp)
+    try:
+        tmp_path.write_text(body, encoding="utf-8")
+        os.chmod(tmp_path, 0o440)
+        check = subprocess.run(
+            ["visudo", "-cf", str(tmp_path)], check=False, capture_output=True, text=True
+        )
+        if check.returncode != 0:
+            print(check.stderr or "visudo rejected", file=sys.stderr)
+            sys.exit(1)
+        legacy = Path("/etc/sudoers.d/omacursor-sddm")
+        if legacy.exists():
+            legacy.unlink()
+        shutil.move(str(tmp_path), str(SUDOERS))
+        os.chmod(SUDOERS, 0o440)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+
+def main() -> int:
+    if os.geteuid() != 0:
+        print("omacursor-link-sddm: must run as root", file=sys.stderr)
+        return 1
+
+    user, home = invoking_user()
+    plugin = Path(
+        os.environ.get(
+            "OMACURSOR_PLUGIN_DIR",
+            home / ".config/omarchy/plugins/io.github.alxwolfenstein97.omacursor",
+        )
+    )
+    plugin_sync = plugin / "bin" / "omacursor-sync-sddm"
+    if not plugin_sync.is_file():
+        print(f"missing {plugin_sync}", file=sys.stderr)
+        return 1
+
+    ensure_adwaita_restored()
+    LIBDIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(plugin_sync, SYNC_BIN)
+    os.chmod(SYNC_BIN, 0o755)
+    write_sudoers(user)
+
+    env = os.environ.copy()
+    env["SUDO_USER"] = user
+    r = subprocess.run([str(SYNC_BIN)], check=False, env=env)
+    if r.returncode != 0:
+        return r.returncode
+
+    marker = home / ".local/state/omarchy/omacursor/sddm-linked"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        f"SDDM via {SYNC_BIN}\nAdwaita cursors NOT modified\ndefault/cursors self-contained\n",
+        encoding="utf-8",
+    )
+    try:
+        pw = pwd.getpwnam(user)
+        os.chown(marker, pw.pw_uid, pw.pw_gid)
+    except KeyError:
+        pass
+    print("omacursor-link-sddm: OK — log out once to refresh SDDM", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
