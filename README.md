@@ -21,7 +21,10 @@ cursors in lockstep forever after.
 
 These Style plugins extend Omarchy’s theme system **without requiring theme
 authors — or you — to ship anything extra**. Official themes, your forks, and
-third-party installs all work as long as they have a `colors.toml`.
+third-party installs all work as long as they have a `colors.toml`. That
+“every theme” contract is intentional: once the desktop can follow farther,
+making *another* theme is more worth it. Longer origin / stop-line:
+[Chroma](https://github.com/AlxWolfenstein97/chroma).
 
 | Goal | What that means here |
 |------|----------------------|
