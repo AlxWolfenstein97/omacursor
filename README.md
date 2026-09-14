@@ -165,9 +165,11 @@ worrying about live reload edge cases.
 ## Why not pure Chroma-style background sync?
 
 Chroma (GTK/Qt) only needs to rewrite a few CSS files — perfect for silent
-sync. Cursors need a Style picker so you can *see* the recolor before living
-with it, and mockups are cheap. The theme-set hook still mirrors Chroma’s
-“set it and forget it” sync after you pick (or on first install).
+sync. Cursors are one surface, not two toolkits: a Style picker lets you
+*see* the recolor across every installed theme before living with it, faster
+than flipping themes manually just to judge the pointer. Mockups are cheap.
+The theme-set hook still mirrors Chroma’s “set it and forget it” sync after
+you pick (or on first install).
 
 ## Check
 
