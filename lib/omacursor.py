@@ -2,7 +2,8 @@
 """OmaCursor — Adwaita cursors recolored from any Omarchy palette.
 
 Discovers every theme with a colors.toml (no extra theme assets). Style-menu
-mockups are illustrative cursor chrome — not live captures. Apply writes an
+mockups are a Catppuccin-style grid of real Adwaita frames recolored with the
+same fill/outline map as apply — not live desktop captures. Apply writes an
 alternating XCursor slot under ~/.local/share/icons/Omarchy-{a,b} (Hyprland
 caches by theme *name*, so same-name overwrites never reload until reboot),
 points the session at the new slot, and optionally mirrors to SDDM.
@@ -20,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -599,116 +601,115 @@ def try_font(size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
 
 MOCKUP_SIZE = (1536, 864)
 SAFE_X = 120
+# Catppuccin-style dense grid: every unique Adwaita state (symlinks collapsed).
+MOCKUP_CURSOR_ORDER = (
+    "default",
+    "pointer",
+    "context-menu",
+    "help",
+    "progress",
+    "wait",
+    "copy",
+    "alias",
+    "no-drop",
+    "not-allowed",
+    "grab",
+    "grabbing",
+    "text",
+    "vertical-text",
+    "cell",
+    "crosshair",
+    "all-scroll",
+    "all-resize",
+    "n-resize",
+    "s-resize",
+    "e-resize",
+    "w-resize",
+    "ne-resize",
+    "nw-resize",
+    "se-resize",
+    "sw-resize",
+    "ns-resize",
+    "ew-resize",
+    "nesw-resize",
+    "nwse-resize",
+    "col-resize",
+    "row-resize",
+    "zoom-in",
+    "zoom-out",
+    "X_cursor",
+)
+MOCKUP_FRAME_SIZE = 48
+MOCKUP_ICON_SCALE = 2
+MOCKUP_GRID_COLS = 7
 
 
-def _draw_pointer(
-    draw: ImageDraw.ImageDraw,
-    tip: tuple[int, int],
-    fill: str,
-    outline: str,
-    scale: float = 1.0,
-) -> None:
-    """Stylized Adwaita-ish left_ptr."""
-    x, y = tip
-    s = scale
-    body = [
-        (x, y),
-        (x, y + int(28 * s)),
-        (x + int(7 * s), y + int(22 * s)),
-        (x + int(12 * s), y + int(34 * s)),
-        (x + int(16 * s), y + int(32 * s)),
-        (x + int(11 * s), y + int(20 * s)),
-        (x + int(20 * s), y + int(20 * s)),
-    ]
-    draw.polygon(body, fill=hex_to_rgb(fill), outline=hex_to_rgb(outline))
-
-
-def _draw_hand(
-    draw: ImageDraw.ImageDraw,
-    origin: tuple[int, int],
-    fill: str,
-    outline: str,
-    scale: float = 1.0,
-) -> None:
-    x, y = origin
-    s = scale
-    # Palm
-    draw.rounded_rectangle(
-        (x, y + int(14 * s), x + int(28 * s), y + int(36 * s)),
-        radius=int(6 * s),
-        fill=hex_to_rgb(fill),
-        outline=hex_to_rgb(outline),
-        width=max(1, int(2 * s)),
-    )
-    # Fingers
-    for i, h in enumerate((18, 22, 20, 16)):
-        fx = x + int(4 * s) + i * int(6 * s)
-        draw.rounded_rectangle(
-            (fx, y + int(14 * s) - int(h * s), fx + int(5 * s), y + int(16 * s)),
-            radius=int(2 * s),
-            fill=hex_to_rgb(fill),
-            outline=hex_to_rgb(outline),
-            width=max(1, int(s)),
+def _xcursor_frame(data: bytes, preferred_size: int = MOCKUP_FRAME_SIZE) -> Image.Image | None:
+    """First frame of the size closest to preferred_size (skips animation tails)."""
+    if data[:4] != b"Xcur":
+        return None
+    _magic, header, _version, ntoc = struct.unpack_from("<IIII", data, 0)
+    best: Image.Image | None = None
+    best_dist = 10**9
+    seen_sizes: set[int] = set()
+    for i in range(ntoc):
+        typ, subtype, pos = struct.unpack_from("<III", data, header + i * 12)
+        if typ != XCURSOR_IMAGE_TYPE or subtype in seen_sizes:
+            continue
+        seen_sizes.add(subtype)
+        chunk_header, _ct, _cs, _cv, width, height, _xhot, _yhot, _delay = struct.unpack_from(
+            "<IIIIIIIII", data, pos
         )
+        pix = data[pos + chunk_header : pos + chunk_header + width * height * 4]
+        im = Image.frombytes("RGBA", (width, height), pix, "raw", "BGRA")
+        dist = abs(subtype - preferred_size)
+        if dist < best_dist:
+            best_dist = dist
+            best = im
+    return best
 
 
-def _draw_ibeam(
-    draw: ImageDraw.ImageDraw,
-    origin: tuple[int, int],
-    fill: str,
-    outline: str,
-    scale: float = 1.0,
-) -> None:
-    x, y = origin
-    s = scale
-    # Vertical bar + serifs
-    draw.rectangle(
-        (x + int(8 * s), y, x + int(12 * s), y + int(36 * s)),
-        fill=hex_to_rgb(fill),
-        outline=hex_to_rgb(outline),
-    )
-    draw.rectangle(
-        (x, y, x + int(20 * s), y + int(4 * s)),
-        fill=hex_to_rgb(fill),
-        outline=hex_to_rgb(outline),
-    )
-    draw.rectangle(
-        (x, y + int(32 * s), x + int(20 * s), y + int(36 * s)),
-        fill=hex_to_rgb(fill),
-        outline=hex_to_rgb(outline),
-    )
+@lru_cache(maxsize=1)
+def _adwaita_mockup_bases() -> tuple[tuple[str, Image.Image], ...]:
+    """Stock Adwaita frames once — mockups only remap colours."""
+    src = adwaita_source()
+    frames: list[tuple[str, Image.Image]] = []
+    for name in MOCKUP_CURSOR_ORDER:
+        path = src / name
+        if not path.exists():
+            continue
+        try:
+            data = path.resolve().read_bytes()
+        except OSError:
+            continue
+        frame = _xcursor_frame(data)
+        if frame is not None:
+            frames.append((name, frame))
+    return tuple(frames)
 
 
-def _draw_wait(
-    draw: ImageDraw.ImageDraw,
-    origin: tuple[int, int],
-    fill: str,
-    outline: str,
-    mid: str,
-    scale: float = 1.0,
-) -> None:
-    x, y = origin
-    s = scale
-    box = (x, y, x + int(28 * s), y + int(36 * s))
-    draw.ellipse(box, outline=hex_to_rgb(outline), width=max(2, int(3 * s)))
-    draw.pieslice(box, start=30, end=140, fill=hex_to_rgb(fill), outline=hex_to_rgb(outline))
-    draw.ellipse(
-        (x + int(8 * s), y + int(10 * s), x + int(20 * s), y + int(22 * s)),
-        fill=hex_to_rgb(mid),
-    )
+def _recolor_rgba(
+    im: Image.Image, fill: tuple[int, int, int], outline: tuple[int, int, int]
+) -> Image.Image:
+    src = im.load()
+    out = Image.new("RGBA", im.size)
+    dst = out.load()
+    for y in range(im.height):
+        for x in range(im.width):
+            r, g, b, a = src[x, y]
+            dst[x, y] = _remap_pixel(r, g, b, a, fill, outline)
+    return out
 
 
 def render_mockup(palette: dict[str, Any], dest: Path, size: tuple[int, int] = MOCKUP_SIZE) -> Path:
-    """Desktop mockup with a few Adwaita-shaped cursors in the theme palette."""
+    """Catppuccin-style grid of recolored Adwaita states (same map as apply)."""
     w, h = size
     img = Image.new("RGB", size, hex_to_rgb(palette["desktop"]))
     draw = ImageDraw.Draw(img)
     font_sm = try_font(22)
     font_md = try_font(28)
-    font_lg = try_font(36)
 
     margin_x, margin_y = SAFE_X, 56
-    # Panel
     draw.rectangle((margin_x, margin_y, w - margin_x, margin_y + 52), fill=hex_to_rgb(palette["panel"]))
     draw.text(
         (margin_x + 24, margin_y + 12),
@@ -716,7 +717,6 @@ def render_mockup(palette: dict[str, Any], dest: Path, size: tuple[int, int] = M
         font=font_md,
         fill=hex_to_rgb(palette["foreground"]),
     )
-    # Accent chip
     chip = (w - margin_x - 160, margin_y + 12, w - margin_x - 24, margin_y + 40)
     draw.rounded_rectangle(chip, radius=8, fill=hex_to_rgb(palette["accent"]))
     draw.text(
@@ -726,7 +726,6 @@ def render_mockup(palette: dict[str, Any], dest: Path, size: tuple[int, int] = M
         fill=hex_to_rgb(on_color(palette["accent"], [palette["background"], palette["bright_foreground"]])),
     )
 
-    # Window
     win = (margin_x + 40, margin_y + 80, w - margin_x - 40, h - margin_y - 40)
     draw.rounded_rectangle(
         win,
@@ -741,69 +740,35 @@ def render_mockup(palette: dict[str, Any], dest: Path, size: tuple[int, int] = M
     )
     draw.text(
         (win[0] + 24, win[1] + 12),
-        "Preview",
+        "All states",
         font=font_md,
         fill=hex_to_rgb(palette["foreground"]),
     )
 
-    # Content area wash
-    content = (win[0] + 24, win[1] + 72, win[2] - 24, win[3] - 24)
+    content = (win[0] + 20, win[1] + 64, win[2] - 20, win[3] - 20)
     draw.rounded_rectangle(content, radius=12, fill=hex_to_rgb(palette["lighter_background"]))
 
-    # Sample tiles
-    labels = [
-        ("Pointer", _draw_pointer),
-        ("Hand", _draw_hand),
-        ("Text", _draw_ibeam),
-        ("Wait", None),
-    ]
-    tile_w = (content[2] - content[0] - 60) // 4
-    for i, (label, drawer) in enumerate(labels):
-        tx0 = content[0] + 20 + i * (tile_w + 12)
-        ty0 = content[1] + 24
-        tx1 = tx0 + tile_w
-        ty1 = content[3] - 24
-        draw.rounded_rectangle(
-            (tx0, ty0, tx1, ty1),
-            radius=12,
-            fill=hex_to_rgb(palette["selection"] if i == 0 else palette["window"]),
-            outline=hex_to_rgb(palette["accent"] if i == 0 else palette["muted"]),
-            width=2 if i == 0 else 1,
-        )
-        cx = (tx0 + tx1) // 2
-        cy = (ty0 + ty1) // 2 - 20
-        scale = 3.2
-        if drawer is _draw_pointer:
-            drawer(draw, (cx - 10, cy - 40), palette["fill"], palette["outline"], scale)
-        elif drawer is _draw_hand:
-            drawer(draw, (cx - 40, cy - 20), palette["fill"], palette["outline"], scale)
-        elif drawer is _draw_ibeam:
-            drawer(draw, (cx - 30, cy - 50), palette["fill"], palette["outline"], scale)
-        else:
-            _draw_wait(
-                draw,
-                (cx - 40, cy - 50),
-                palette["fill"],
-                palette["outline"],
-                palette["mid"],
-                scale,
-            )
-        tw = draw.textlength(label, font=font_lg)
-        draw.text(
-            (cx - tw / 2, ty1 - 56),
-            label,
-            font=font_lg,
-            fill=hex_to_rgb(palette["foreground"]),
-        )
+    fill = hex_to_rgb(palette["fill"])
+    outline = hex_to_rgb(palette["outline"])
+    bases = _adwaita_mockup_bases()
+    cols = MOCKUP_GRID_COLS
+    rows = max(1, (len(bases) + cols - 1) // cols)
+    inner = (content[0] + 12, content[1] + 12, content[2] - 12, content[3] - 12)
+    cell_w = (inner[2] - inner[0]) / cols
+    cell_h = (inner[3] - inner[1]) / rows
+    scale = MOCKUP_ICON_SCALE
 
-    # Floating "live" pointer over the window for scale reference
-    _draw_pointer(
-        draw,
-        (win[0] + 80, win[1] + 100),
-        palette["fill"],
-        palette["outline"],
-        scale=2.4,
-    )
+    for i, (_name, base) in enumerate(bases):
+        r, c = divmod(i, cols)
+        tinted = _recolor_rgba(base, fill, outline)
+        if scale != 1:
+            tinted = tinted.resize(
+                (base.width * scale, base.height * scale),
+                Image.Resampling.NEAREST,
+            )
+        cx = int(inner[0] + (c + 0.5) * cell_w)
+        cy = int(inner[1] + (r + 0.5) * cell_h)
+        img.paste(tinted, (cx - tinted.width // 2, cy - tinted.height // 2), tinted)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     img.save(dest, format="PNG", optimize=True)
@@ -853,10 +818,47 @@ def bust_image_picker_cache(preview_root: Path) -> None:
                 pass
 
 
+def default_palette() -> dict[str, Any]:
+    """Stock Adwaita black/white — the picker tile for reverting to default."""
+    return {
+        "slug": "default",
+        "name": "Default",
+        "mode": "dark",
+        "background": "#2e2e2e",
+        "dark_background": "#242424",
+        "darker_background": "#1a1a1a",
+        "lighter_background": "#3a3a3a",
+        "foreground": "#eeeeee",
+        "dark_foreground": "#888888",
+        "bright_foreground": "#ffffff",
+        "muted": "#777777",
+        "selection": "#404040",
+        "accent": "#000000",
+        "red": "#c01c28",
+        "green": "#2ec27e",
+        "yellow": "#f5c211",
+        "fill": "#000000",
+        "outline": "#ffffff",
+        "mid": "#808080",
+        "desktop": "#1a1a1a",
+        "panel": "#242424",
+        "window": "#2e2e2e",
+        "window_border": "#555555",
+    }
+
+
+def generate_default_preview() -> Path:
+    return render_mockup(default_palette(), preview_path("default"))
+
+
 def warm_previews(slugs: list[str] | None = None) -> int:
     targets = slugs or list_theme_slugs()
     preview_root = paths()["cache"] / "previews"
     preview_root.mkdir(parents=True, exist_ok=True)
+    try:
+        generate_default_preview()
+    except Exception as error:  # noqa: BLE001
+        note(f"preview default: {error}")
     for slug in targets:
         try:
             generate_preview(slug)
@@ -1000,34 +1002,10 @@ def cmd_switcher(_: argparse.Namespace) -> int:
     if current and (preview_dir / f"{current}.png").is_file():
         selected = str(preview_dir / f"{current}.png")
 
-    default_png = preview_dir / "default.png"
-    if not default_png.is_file():
-        neutral = {
-            "slug": "default",
-            "name": "Default",
-            "mode": "dark",
-            "background": "#2e2e2e",
-            "dark_background": "#242424",
-            "darker_background": "#1a1a1a",
-            "lighter_background": "#3a3a3a",
-            "foreground": "#eeeeee",
-            "dark_foreground": "#888888",
-            "bright_foreground": "#ffffff",
-            "muted": "#777777",
-            "selection": "#404040",
-            "accent": "#000000",
-            "red": "#c01c28",
-            "green": "#2ec27e",
-            "yellow": "#f5c211",
-            "fill": "#000000",
-            "outline": "#ffffff",
-            "mid": "#808080",
-            "desktop": "#1a1a1a",
-            "panel": "#242424",
-            "window": "#2e2e2e",
-            "window_border": "#555555",
-        }
-        render_mockup(neutral, default_png)
+    try:
+        generate_default_preview()
+    except Exception as error:  # noqa: BLE001
+        note(f"preview default: {error}")
 
     bust_image_picker_cache(preview_dir)
     cmd = [

@@ -30,21 +30,21 @@ making *another* theme is more worth it. Longer origin / stop-line:
 |------|----------------------|
 | Zero extra assets | No per-theme cursor packs. Colours come from `colors.toml` alone. |
 | Extreme compatibility | Stock + user + foreign themes all appear in the picker automatically. |
-| Illustrative mockups | Stylized pointer / hand / text / wait on a themed window. **Not** live captures. |
+| Illustrative mockups | Dense Catppuccin-style grid of every unique Adwaita state, recolored with the same map as apply. **Not** live captures. |
 | Carousel-safe | Mockups are 1536×864 with ~8% side inset so the Style tile crop does not shave the subject. |
-| Fast pickers | Previews are drawn with Pillow — we do **not** bake a full XCursor theme per tile (that would be slow and pointless for a carousel). |
+| Fast pickers | Previews recolor one cached frame per state (~30 ms) — we do **not** bake a full XCursor theme per tile. |
 
-Recoloring every Adwaita cursor file for every theme just to show a thumbnail
-would be wasted work. The applied `Omarchy` cursor theme *is* a real XCursor
-recolor of stock Adwaita; only the picker art is drawn.
+A full XCursor bake per theme just for the carousel would be wasted work. The
+applied `Omarchy` cursor theme *is* that bake; picker art samples the same
+shapes and palette without writing icon dirs.
 
 ## What you get
 
 - **Style → Cursors** in the Omarchy menu — same carousel picker as Unlock /
   Theme / OBS / Boot.
 - **Live theme discovery** — every Omarchy theme with a `colors.toml`.
-- **Mockups** — Adwaita-shaped cursors on a small desktop chrome, coloured from
-  that theme’s accent / foreground / backgrounds.
+- **Mockups** — all unique Adwaita states in a small-icon grid on themed
+  chrome, coloured from that theme’s accent / foreground / backgrounds.
 - **Real cursors** — stock Adwaita XCursor files remapped (fill → accent,
   outline → contrasting ink) into alternating
   `~/.local/share/icons/Omarchy-{a,b}/` slots (live reload without reboot).
