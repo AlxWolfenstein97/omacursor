@@ -170,6 +170,11 @@ omarchy pkg drop python-numpy
   when the pointer enters another window (or the same window again). Nudge
   the mouse across a window edge; not an OmaCursor bug, just how those apps
   cache the shape.
+- **Stuck on the pointer shape after a big kernel (or similar) update** —
+  cursor still visible, but every hover stays the default arrow. Swap Style →
+  Cursors (or the desktop theme) back and forth once or twice; it usually
+  heals itself. Same class of compositor/cursor-cache weirdness as the
+  window-edge nudge above.
 - **Steam** — locks the cursor theme it saw at launch. After a Style → Cursors
   (or desktop theme) switch, tray-quit Steam fully and reopen; otherwise you
   get a mix of old and new. Not much to fix on our side.
