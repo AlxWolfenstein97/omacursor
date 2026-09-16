@@ -147,10 +147,15 @@ alternates `Omarchy-a` / `Omarchy-b` so every apply is a *new* theme name.
 | `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter system wiring torn down too. Shared packages stay. |
 | `omarchy pkg drop python-pillow` | Optional. Only if nothing else on the machine needs Pillow. |
 
+**Full wipe** — copy-paste to remove plugin wiring *and* the shared package this
+installer may have pulled (skip the `pkg drop` line if something else still
+needs Pillow):
+
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/uninstall.sh
 omarchy plugin disable io.github.alxwolfenstein97.omacursor
 omarchy plugin remove io.github.alxwolfenstein97.omacursor
+omarchy pkg drop python-pillow
 ```
 
 ## Limits, honestly
