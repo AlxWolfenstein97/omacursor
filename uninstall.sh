@@ -71,5 +71,4 @@ fi
 note "done — stock Adwaita cursors; no omacursor menu/hook/slots left"
 note "plugin files remain at $here until you omit/remove the plugin"
 note "optional: omarchy pkg drop python-pillow  # if nothing else needs Pillow"
-note "optional: omarchy pkg drop python-numpy   # if nothing else needs NumPy"
 exit 0
