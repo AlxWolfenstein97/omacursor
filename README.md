@@ -175,6 +175,12 @@ omarchy pkg drop python-numpy
   Cursors (or the desktop theme) back and forth once or twice; it usually
   heals itself. Same class of compositor/cursor-cache weirdness as the
   window-edge nudge above.
+- **Stuck on the busy/spinner cursor while nothing is loading** — seen after
+  a stretch of shell reloads / plugin tinkering (AI work, install loops, lots
+  of `omarchy restart shell`). Pointer sits on the progress/wait shape with no
+  app actually busy. Same fix: swap Style → Cursors or the desktop theme a
+  couple of times and it clears. More of a “reload the session too hard”
+  quirk than a normal daily-driver one.
 - **Steam** — locks the cursor theme it saw at launch. After a Style → Cursors
   (or desktop theme) switch, tray-quit Steam fully and reopen; otherwise you
   get a mix of old and new. Not much to fix on our side.
