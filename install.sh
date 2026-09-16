@@ -46,11 +46,11 @@ ensure_pkg() {
   fi
 }
 
-# Pillow draws Style carousel mockups — install before warming / first sync.
+# Pillow draws Style carousel mockups; numpy vectorizes Adwaita fill→outline
+# remaps (mockups + apply). Install both before warming / first sync.
 # Adwaita cursors come with Omarchy already; we recolour those (no cursor pkg).
-# NumPy is *not* pulled: when present (e.g. via mangohud/matplotlib) remaps
-# vectorize; otherwise pure-Python fallback is fine.
 ensure_pkg python-pillow "draws Style → Cursors mockups (Pillow)"
+ensure_pkg python-numpy "vectorizes Adwaita cursor remaps (mockups + apply)"
 if [[ ! -d /usr/share/icons/Adwaita/cursors ]]; then
   warn "Adwaita cursors missing (Omarchy normally ships them) — OmaCursor cannot recolour until they are present"
 fi

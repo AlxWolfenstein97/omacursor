@@ -32,7 +32,7 @@ making *another* theme is more worth it. Longer origin / stop-line:
 | Extreme compatibility | Stock + user + foreign themes all appear in the picker automatically. |
 | Illustrative mockups | Dense Catppuccin-style grid of every unique Adwaita state, recolored with the same map as apply. **Not** live captures. |
 | Carousel-safe | Mockups are 1536×864 with ~8% side inset so the Style tile crop does not shave the subject. |
-| Snappy pickers | Mockups warm in parallel across CPU cores, **skip unchanged** `colors.toml` tiles, and vectorize Adwaita remaps when NumPy is already on the machine. Opens like Omarchy’s stock art carousels. We sample recolored Adwaita frames; we do **not** bake a full XCursor theme per tile. |
+| Snappy pickers | Mockups warm in parallel across CPU cores, **skip unchanged** `colors.toml` tiles, and vectorize Adwaita remaps with NumPy. Opens like Omarchy’s stock art carousels. We sample recolored Adwaita frames; we do **not** bake a full XCursor theme per tile. |
 
 A full XCursor bake per theme just for the carousel would be wasted work. The
 applied `Omarchy` cursor theme *is* that bake; picker art samples the same
@@ -99,15 +99,15 @@ no Adwaita hijack required. Debug: `/var/log/omacursor-sddm.log`.
 | Package | Why |
 |---------|-----|
 | `python-pillow` | Draws the Style → Cursors mockup PNGs (Pillow). Without it the carousel is empty / broken on first open. |
+| `python-numpy` | Vectorizes Adwaita fill→outline remaps for mockups and apply so cold warm / theme flips stay fast. Pure-Python fallback if somehow missing. |
 
 **Already on Omarchy:** `adwaita-cursors` (stock pointer shapes). OmaCursor only
 recolours those — the installer does **not** pull a duplicate cursor package.
-**NumPy** is not an Omarchy (or OmaCursor) dependency either — if something else
-already installed it (common via MangoHud / matplotlib), remaps vectorize;
-otherwise pure-Python is fine. We do **not** pull `python-numpy`.
+NumPy is **not** an Omarchy dep either; we pull it ourselves so every install
+gets the fast remap path (not only boxes that already have MangoHud / matplotlib).
 
 Also uses Omarchy’s image picker (`omarchy-menu-images`). Order matters: Pillow
-first, then background mockup warm — `install.sh` does that for you.
++ NumPy first, then background mockup warm — `install.sh` does that for you.
 
 ## How it works
 
@@ -149,16 +149,18 @@ alternates `Omarchy-a` / `Omarchy-b` so every apply is a *new* theme name.
 | `omarchy plugin disable …` | Shell service stops. **Theme-set hook still runs** — cursors stay synced on every desktop theme flip. |
 | `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter system wiring torn down too. Shared packages stay. |
 | `omarchy pkg drop python-pillow` | Optional. Only if nothing else on the machine needs Pillow. |
+| `omarchy pkg drop python-numpy` | Optional. Only if nothing else on the machine needs NumPy. |
 
-**Full wipe** — copy-paste to remove plugin wiring *and* the shared package this
-installer may have pulled (skip the `pkg drop` line if something else still
-needs Pillow):
+**Full wipe** — copy-paste to remove plugin wiring *and* packages this installer
+may have pulled (skip a `pkg drop` line if something else still needs that
+package):
 
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/uninstall.sh
 omarchy plugin disable io.github.alxwolfenstein97.omacursor
 omarchy plugin remove io.github.alxwolfenstein97.omacursor
 omarchy pkg drop python-pillow
+omarchy pkg drop python-numpy
 ```
 
 ## Limits, honestly
@@ -194,8 +196,8 @@ Chroma (GTK/Qt) only needs to rewrite a few CSS files — perfect for silent
 sync. Cursors are one surface, not two toolkits: a Style picker lets you
 *see* the recolor across every installed theme before living with it, faster
 than flipping themes manually just to judge the pointer. Mockups warm across
-CPU cores, skip unchanged `colors.toml` tiles, and vectorize remaps when NumPy
-is already around — reopen feels like Omarchy’s stock art pickers. The theme-set
+CPU cores, skip unchanged `colors.toml` tiles, and vectorize remaps with NumPy
+so reopen feels like Omarchy’s stock art pickers. The theme-set
 hook still mirrors Chroma’s “set it and forget it” sync after you pick (or on
 first install).
 
