@@ -46,11 +46,11 @@ ensure_pkg() {
   fi
 }
 
-# Pillow draws Style carousel mockups; Adwaita is the cursor source we recolor.
-# Install packages *before* warming previews or the first Style open looks broken.
+# Pillow draws Style carousel mockups — install before warming previews.
+# Adwaita cursors come with Omarchy already; we recolour those in place (no pkg pull).
 ensure_pkg python-pillow "draws Style → Cursors mockups (Pillow)"
 if [[ ! -d /usr/share/icons/Adwaita/cursors ]]; then
-  ensure_pkg adwaita-cursors "stock cursor shapes OmaCursor recolours"
+  warn "Adwaita cursors missing (Omarchy normally ships them) — OmaCursor cannot recolour until they are present"
 fi
 
 # ------------------------------------------------------------------- theme hook

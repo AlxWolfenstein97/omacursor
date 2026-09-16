@@ -99,9 +99,11 @@ no Adwaita hijack required. Debug: `/var/log/omacursor-sddm.log`.
 | Package | Why |
 |---------|-----|
 | `python-pillow` | Draws the Style → Cursors mockup PNGs (Pillow). Without it the carousel is empty / broken on first open. |
-| `adwaita-cursors` | Stock cursor shapes OmaCursor recolours into `Omarchy-{a,b}`. |
 
-Also uses Omarchy’s image picker (`omarchy-menu-images`). Order matters: packages
+**Already on Omarchy:** `adwaita-cursors` (stock pointer shapes). OmaCursor only
+recolours those — the installer does **not** pull a duplicate cursor package.
+
+Also uses Omarchy’s image picker (`omarchy-menu-images`). Order matters: Pillow
 first, then background mockup warm — `install.sh` does that for you.
 
 ## How it works
@@ -145,10 +147,11 @@ omarchy plugin disable io.github.alxwolfenstein97.omacursor
 omarchy plugin remove io.github.alxwolfenstein97.omacursor
 ```
 
-Uninstall removes the menu row, theme-set hook, Hyprland env snippet, managed
-`Omarchy` cursor theme, and state/cache — then restores Adwaita. With
-`--with-sddm`, it also restores `/usr/share/icons/default` and the greeter
-compositor override.
+Uninstall is a clean slate: menu row, theme-set hook, Hyprland env snippet,
+`Omarchy-{a,b}` icon themes, state/cache — then stock Adwaita. With
+`--with-sddm`, it also tears down greeter `/usr/share/icons/Omarchy`,
+`default/cursors`, sudoers, and the compositor override. Does **not** remove
+`python-pillow` (shared).
 
 ## Limits, honestly
 
