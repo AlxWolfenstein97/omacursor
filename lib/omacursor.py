@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing as mp
 import os
 import re
 import shutil
@@ -21,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -847,23 +849,43 @@ def default_palette() -> dict[str, Any]:
     }
 
 
+def _preview_pool(workers: int) -> ProcessPoolExecutor:
+    # Python 3.14 defaults to forkserver; that re-imports __main__ for every
+    # worker when bin/* runs `python3 lib/<plugin>.py`. fork inherits the
+    # already-loaded module and actually parallelizes Pillow work.
+    try:
+        ctx = mp.get_context("fork")
+    except ValueError:
+        ctx = mp.get_context()
+    return ProcessPoolExecutor(max_workers=workers, mp_context=ctx)
+
+
 def generate_default_preview() -> Path:
     return render_mockup(default_palette(), preview_path("default"))
+
+
+def _warm_one_preview(slug: str) -> str:
+    """Process-pool worker — one mockup per call."""
+    if slug == "__default__":
+        return str(generate_default_preview())
+    return str(generate_preview(slug))
 
 
 def warm_previews(slugs: list[str] | None = None) -> int:
     targets = slugs or list_theme_slugs()
     preview_root = paths()["cache"] / "previews"
     preview_root.mkdir(parents=True, exist_ok=True)
-    try:
-        generate_default_preview()
-    except Exception as error:  # noqa: BLE001
-        note(f"preview default: {error}")
-    for slug in targets:
-        try:
-            generate_preview(slug)
-        except Exception as error:  # noqa: BLE001
-            note(f"preview {slug}: {error}")
+    jobs = ["__default__", *targets]
+    workers = max(1, min(len(jobs), os.cpu_count() or 2))
+    with _preview_pool(workers) as pool:
+        futures = {pool.submit(_warm_one_preview, slug): slug for slug in jobs}
+        for fut in as_completed(futures):
+            slug = futures[fut]
+            label = "default" if slug == "__default__" else slug
+            try:
+                fut.result()
+            except Exception as error:  # noqa: BLE001
+                note(f"preview {label}: {error}")
     bust_image_picker_cache(preview_root)
     return 0
 
