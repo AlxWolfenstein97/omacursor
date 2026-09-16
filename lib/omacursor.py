@@ -299,11 +299,41 @@ def _remap_pixel(
     return nr, ng, nb, a
 
 
+def _remap_bgra_numpy(
+    chunk: Any, fill: tuple[int, int, int], outline: tuple[int, int, int]
+) -> Any:
+    """Vectorized BGRA luma-lerp (numpy). chunk is (N, 4) uint8."""
+    import numpy as np
+
+    out = chunk.copy()
+    a = chunk[:, 3]
+    mask = a != 0
+    if not mask.any():
+        return out
+    # XCursor stores BGRA
+    b = chunk[mask, 0].astype(np.float32)
+    g = chunk[mask, 1].astype(np.float32)
+    r = chunk[mask, 2].astype(np.float32)
+    t = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+    fill_a = np.array(fill, dtype=np.float32)
+    out_a = np.array(outline, dtype=np.float32)
+    rgb = fill_a + (out_a - fill_a) * t[:, None]
+    rgb = np.clip(np.rint(rgb), 0, 255).astype(np.uint8)
+    out[mask, 2] = rgb[:, 0]
+    out[mask, 1] = rgb[:, 1]
+    out[mask, 0] = rgb[:, 2]
+    return out
+
+
 def recolor_xcursor(data: bytes, fill: tuple[int, int, int], outline: tuple[int, int, int]) -> bytes:
     if data[:4] != b"Xcur":
         return data
     out = bytearray(data)
     _magic, header, _version, ntoc = struct.unpack_from("<IIII", data, 0)
+    try:
+        import numpy as np
+    except ImportError:
+        np = None  # type: ignore[assignment]
     for i in range(ntoc):
         typ, _subtype, pos = struct.unpack_from("<III", data, header + i * 12)
         if typ != XCURSOR_IMAGE_TYPE:
@@ -312,6 +342,14 @@ def recolor_xcursor(data: bytes, fill: tuple[int, int, int], outline: tuple[int,
             "<IIIIIIIII", data, pos
         )
         pix = pos + chunk_header
+        nbytes = width * height * 4
+        if np is not None and nbytes > 0:
+            flat = np.frombuffer(
+                bytes(out[pix : pix + nbytes]), dtype=np.uint8
+            ).reshape(-1, 4)
+            remapped = _remap_bgra_numpy(flat, fill, outline)
+            out[pix : pix + nbytes] = remapped.reshape(-1).tobytes()
+            continue
         for j in range(width * height):
             o = pix + j * 4
             b, g, r, a = out[o], out[o + 1], out[o + 2], out[o + 3]
@@ -603,6 +641,49 @@ def try_font(size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
 
 MOCKUP_SIZE = (1536, 864)
 SAFE_X = 120
+# Bump when render_mockup chrome / grid changes so cached tiles re-draw.
+MOCKUP_LAYOUT_VERSION = "2"
+
+
+def _input_token(path: Path | None) -> str:
+    """Cheap staleness key (mtime_ns:size) for colors.toml / PSF / etc."""
+    if path is None:
+        return "none"
+    try:
+        st = path.stat()
+    except OSError:
+        return "missing"
+    return f"{st.st_mtime_ns}:{st.st_size}"
+
+
+def _preview_meta_path(dest: Path) -> Path:
+    return Path(str(dest) + ".meta")
+
+
+def _preview_fresh(dest: Path, fingerprint: str) -> bool:
+    if not dest.is_file():
+        return False
+    try:
+        return _preview_meta_path(dest).read_text(encoding="utf-8").strip() == fingerprint
+    except OSError:
+        return False
+
+
+def _write_preview_meta(dest: Path, fingerprint: str) -> None:
+    try:
+        _preview_meta_path(dest).write_text(fingerprint + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _preview_fingerprint(slug: str) -> str:
+    if slugify(slug) == "default":
+        return f"layout:{MOCKUP_LAYOUT_VERSION}|default"
+    directory = theme_dir(slug)
+    colors = (directory / "colors.toml") if directory else None
+    return f"layout:{MOCKUP_LAYOUT_VERSION}|colors:{_input_token(colors)}"
+
+
 # Catppuccin-style dense grid: every unique Adwaita state (symlinks collapsed).
 MOCKUP_CURSOR_ORDER = (
     "default",
@@ -693,14 +774,31 @@ def _adwaita_mockup_bases() -> tuple[tuple[str, Image.Image], ...]:
 def _recolor_rgba(
     im: Image.Image, fill: tuple[int, int, int], outline: tuple[int, int, int]
 ) -> Image.Image:
-    src = im.load()
-    out = Image.new("RGBA", im.size)
-    dst = out.load()
-    for y in range(im.height):
-        for x in range(im.width):
-            r, g, b, a = src[x, y]
-            dst[x, y] = _remap_pixel(r, g, b, a, fill, outline)
-    return out
+    """Remap Adwaita fill→outline; numpy when available, else pure-Python."""
+    try:
+        import numpy as np
+    except ImportError:
+        src = im.load()
+        out = Image.new("RGBA", im.size)
+        dst = out.load()
+        for y in range(im.height):
+            for x in range(im.width):
+                r, g, b, a = src[x, y]
+                dst[x, y] = _remap_pixel(r, g, b, a, fill, outline)
+        return out
+
+    arr = np.asarray(im, dtype=np.uint8)
+    out = arr.copy()
+    a = arr[:, :, 3]
+    mask = a != 0
+    if mask.any():
+        rgb = arr[:, :, :3].astype(np.float32)
+        t = (0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]) / 255.0
+        fill_a = np.array(fill, dtype=np.float32)
+        out_a = np.array(outline, dtype=np.float32)
+        new = fill_a + (out_a - fill_a) * t[:, :, None]
+        out[mask, :3] = np.clip(np.rint(new[mask]), 0, 255).astype(np.uint8)
+    return Image.fromarray(out, "RGBA")
 
 
 def render_mockup(palette: dict[str, Any], dest: Path, size: tuple[int, int] = MOCKUP_SIZE) -> Path:
@@ -781,9 +879,15 @@ def preview_path(slug: str) -> Path:
     return paths()["cache"] / "previews" / f"{slugify(slug)}.png"
 
 
-def generate_preview(slug: str) -> Path:
+def generate_preview(slug: str, *, force: bool = False) -> Path:
+    dest = preview_path(slug)
+    fp = _preview_fingerprint(slug)
+    if not force and _preview_fresh(dest, fp):
+        return dest
     palette = palette_from_theme(slug)
-    return render_mockup(palette, preview_path(slug))
+    render_mockup(palette, dest)
+    _write_preview_meta(dest, fp)
+    return dest
 
 
 def bust_image_picker_cache(preview_root: Path) -> None:
@@ -860,22 +964,40 @@ def _preview_pool(workers: int) -> ProcessPoolExecutor:
     return ProcessPoolExecutor(max_workers=workers, mp_context=ctx)
 
 
-def generate_default_preview() -> Path:
-    return render_mockup(default_palette(), preview_path("default"))
+def generate_default_preview(*, force: bool = False) -> Path:
+    dest = preview_path("default")
+    fp = _preview_fingerprint("default")
+    if not force and _preview_fresh(dest, fp):
+        return dest
+    render_mockup(default_palette(), dest)
+    _write_preview_meta(dest, fp)
+    return dest
 
 
 def _warm_one_preview(slug: str) -> str:
-    """Process-pool worker — one mockup per call."""
+    """Process-pool worker — one mockup per call (already known dirty)."""
     if slug == "__default__":
-        return str(generate_default_preview())
-    return str(generate_preview(slug))
+        return str(generate_default_preview(force=True))
+    return str(generate_preview(slug, force=True))
 
 
 def warm_previews(slugs: list[str] | None = None) -> int:
     targets = slugs or list_theme_slugs()
     preview_root = paths()["cache"] / "previews"
     preview_root.mkdir(parents=True, exist_ok=True)
-    jobs = ["__default__", *targets]
+    wanted = {"default", *{slugify(s) for s in targets}}
+    for existing in preview_root.glob("*.png"):
+        if existing.stem not in wanted:
+            existing.unlink(missing_ok=True)
+            _preview_meta_path(existing).unlink(missing_ok=True)
+    jobs: list[str] = []
+    for slug in ("__default__", *targets):
+        label = "default" if slug == "__default__" else slug
+        if _preview_fresh(preview_path(label), _preview_fingerprint(label)):
+            continue
+        jobs.append(slug)
+    if not jobs:
+        return 0
     workers = max(1, min(len(jobs), os.cpu_count() or 2))
     with _preview_pool(workers) as pool:
         futures = {pool.submit(_warm_one_preview, slug): slug for slug in jobs}
