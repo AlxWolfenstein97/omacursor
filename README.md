@@ -139,23 +139,18 @@ v1.0 wrote into a single `Omarchy` directory and called `setcursor Omarchy`
 again — the compositor kept serving the old pixels until a cold start. v1.1
 alternates `Omarchy-a` / `Omarchy-b` so every apply is a *new* theme name.
 
-## Remove
+## Disable vs remove
+
+| Action | What happens |
+|--------|----------------|
+| `omarchy plugin disable …` | Shell service stops. **Theme-set hook still runs** — cursors stay synced on every desktop theme flip. |
+| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter system wiring torn down too. Shared packages stay. |
+| `omarchy pkg drop python-pillow` | Optional. Only if nothing else on the machine needs Pillow. |
 
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/uninstall.sh
 omarchy plugin disable io.github.alxwolfenstein97.omacursor
 omarchy plugin remove io.github.alxwolfenstein97.omacursor
-```
-
-Uninstall is a clean slate: menu row, theme-set hook, Hyprland env snippet,
-`Omarchy-{a,b}` icon themes, state/cache — then stock Adwaita. With
-`--with-sddm`, it also tears down greeter `/usr/share/icons/Omarchy`,
-`default/cursors`, sudoers, and the compositor override.
-
-Shared packages stay installed (other tools may use them). Optional wipe:
-
-```sh
-omarchy pkg drop python-pillow   # only if nothing else needs Pillow
 ```
 
 ## Limits, honestly
