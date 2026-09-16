@@ -150,8 +150,13 @@ omarchy plugin remove io.github.alxwolfenstein97.omacursor
 Uninstall is a clean slate: menu row, theme-set hook, Hyprland env snippet,
 `Omarchy-{a,b}` icon themes, state/cache — then stock Adwaita. With
 `--with-sddm`, it also tears down greeter `/usr/share/icons/Omarchy`,
-`default/cursors`, sudoers, and the compositor override. Does **not** remove
-`python-pillow` (shared).
+`default/cursors`, sudoers, and the compositor override.
+
+Shared packages stay installed (other tools may use them). Optional wipe:
+
+```sh
+omarchy pkg drop python-pillow   # only if nothing else needs Pillow
+```
 
 ## Limits, honestly
 
