@@ -32,7 +32,7 @@ making *another* theme is more worth it. Longer origin / stop-line:
 | Extreme compatibility | Stock + user + foreign themes all appear in the picker automatically. |
 | Illustrative mockups | Dense Catppuccin-style grid of every unique Adwaita state, recolored with the same map as apply. **Not** live captures. |
 | Carousel-safe | Mockups are 1536×864 with ~8% side inset so the Style tile crop does not shave the subject. |
-| Fast pickers | Previews recolor one cached frame per state (~30 ms) — we do **not** bake a full XCursor theme per tile. |
+| Snappy pickers | Mockups warm in parallel across CPU cores — opens like Omarchy’s stock art carousels. We sample recolored Adwaita frames; we do **not** bake a full XCursor theme per tile. |
 
 A full XCursor bake per theme just for the carousel would be wasted work. The
 applied `Omarchy` cursor theme *is* that bake; picker art samples the same
@@ -94,8 +94,15 @@ falls back to `/usr/share/icons/default` (stock: Adwaita). OmaCursor therefore:
 Log out once after `--with-sddm`. Greeter cursor theming works with that path —
 no Adwaita hijack required. Debug: `/var/log/omacursor-sddm.log`.
 
-**Needs:** `adwaita-cursors`, Omarchy’s image picker, Python 3 with Pillow
-(`python-pillow` on Arch). The installer pulls `adwaita-cursors` if missing.
+**Needs (installer pulls these if missing):**
+
+| Package | Why |
+|---------|-----|
+| `python-pillow` | Draws the Style → Cursors mockup PNGs (Pillow). Without it the carousel is empty / broken on first open. |
+| `adwaita-cursors` | Stock cursor shapes OmaCursor recolours into `Omarchy-{a,b}`. |
+
+Also uses Omarchy’s image picker (`omarchy-menu-images`). Order matters: packages
+first, then background mockup warm — `install.sh` does that for you.
 
 ## How it works
 
@@ -170,9 +177,10 @@ worrying about live reload edge cases.
 Chroma (GTK/Qt) only needs to rewrite a few CSS files — perfect for silent
 sync. Cursors are one surface, not two toolkits: a Style picker lets you
 *see* the recolor across every installed theme before living with it, faster
-than flipping themes manually just to judge the pointer. Mockups are cheap.
-The theme-set hook still mirrors Chroma’s “set it and forget it” sync after
-you pick (or on first install).
+than flipping themes manually just to judge the pointer. Mockups warm across
+CPU cores so the carousel feels like Omarchy’s stock art pickers. The theme-set
+hook still mirrors Chroma’s “set it and forget it” sync after you pick (or on
+first install).
 
 ## Check
 

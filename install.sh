@@ -32,13 +32,25 @@ chmod 755 "$here"/bin/* "$here/omarchy/theme-set-hook" "$here/check.sh" \
 
 export OMACURSOR_PLUGIN_DIR="$here"
 
-if [[ ! -d /usr/share/icons/Adwaita/cursors ]]; then
-  if command -v omarchy >/dev/null 2>&1; then
-    note "installing adwaita-cursors"
-    omarchy pkg add adwaita-cursors || warn "could not install adwaita-cursors"
-  else
-    warn "Adwaita cursors missing — install adwaita-cursors"
+ensure_pkg() {
+  local pkg=$1
+  local why=$2
+  if pacman -Q "$pkg" &>/dev/null; then
+    return 0
   fi
+  note "installing $pkg — $why"
+  if command -v omarchy >/dev/null 2>&1; then
+    omarchy pkg add "$pkg" || warn "could not install $pkg"
+  else
+    warn "install $pkg manually — $why"
+  fi
+}
+
+# Pillow draws Style carousel mockups; Adwaita is the cursor source we recolor.
+# Install packages *before* warming previews or the first Style open looks broken.
+ensure_pkg python-pillow "draws Style → Cursors mockups (Pillow)"
+if [[ ! -d /usr/share/icons/Adwaita/cursors ]]; then
+  ensure_pkg adwaita-cursors "stock cursor shapes OmaCursor recolours"
 fi
 
 # ------------------------------------------------------------------- theme hook
