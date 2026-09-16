@@ -4,10 +4,10 @@ import Quickshell.Io
 
 // OmaCursor service plugin.
 //
-// Cursor recoloring lives in bin/omacursor; the theme-set hook keeps the
-// managed cursor slots in step with Omarchy. This service re-runs the
-// installer at shell start (menu/hook) and is the safety net if a switch
-// somehow skips the hook — same idea as Chroma.
+// Cursor recoloring lives in bin/omacursor; the theme-set hook keeps slots in
+// step. This service only re-runs install.sh once at shell start (menu/hook/
+// packages). No probe timer — the hook already covers theme switches, and a
+// second sync path made boots/flips feel heavier than they needed to.
 Item {
     id: root
     visible: false
@@ -15,11 +15,7 @@ Item {
     property var shell: null
     property var manifest: null
     property string lastError: ""
-    property string lastSeenStamp: ""
-    property string lastAppliedStamp: ""
 
-    readonly property string home: Quickshell.env("HOME") || ""
-    readonly property string themeDir: home + "/.local/state/omarchy/current/theme"
     readonly property string pluginDir: {
         if (manifest && manifest.__sourceDir)
             return String(manifest.__sourceDir)
@@ -60,57 +56,5 @@ Item {
                 installer.running = true
             }
         }
-    }
-
-    // Safety net: if theme.name/colors.toml change without the hook firing,
-    // re-sync within a few seconds.
-    Process {
-        id: probeProcess
-        running: false
-        command: ["sh", "-c",
-            'p=$(readlink -f -- "$1") || exit 0; printf "%s %s\\n" "$p" "$(stat -c %Y -- "$p/colors.toml" 2>/dev/null)"',
-            "-", root.themeDir]
-        stdout: StdioCollector {
-            waitForEnd: true
-            onStreamFinished: root.onProbe(text.trim())
-        }
-    }
-
-    Process {
-        id: syncProcess
-        running: false
-        command: [root.pluginDir + "/bin/omacursor-sync", "--quiet"]
-        onExited: function (exitCode) {
-            if (exitCode === 0)
-                root.lastAppliedStamp = root.lastSeenStamp
-        }
-    }
-
-    Timer {
-        interval: 4000
-        running: true
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: {
-            if (!probeProcess.running)
-                probeProcess.running = true
-        }
-    }
-
-    function onProbe(stamp) {
-        if (stamp === "")
-            return
-        var first = lastSeenStamp === ""
-        lastSeenStamp = stamp
-        if (syncProcess.running)
-            return
-        if (stamp === lastAppliedStamp)
-            return
-        // Skip the very first probe right after installer; install already synced.
-        if (first) {
-            lastAppliedStamp = stamp
-            return
-        }
-        syncProcess.running = true
     }
 }

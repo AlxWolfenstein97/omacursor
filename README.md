@@ -32,7 +32,7 @@ making *another* theme is more worth it. Longer origin / stop-line:
 | Extreme compatibility | Stock + user + foreign themes all appear in the picker automatically. |
 | Illustrative mockups | Dense Catppuccin-style grid of every unique Adwaita state, recolored with the same map as apply. **Not** live captures. |
 | Carousel-safe | Mockups are 1536×864 with ~8% side inset so the Style tile crop does not shave the subject. |
-| Snappy pickers | Mockups warm in parallel across CPU cores, **skip unchanged** `colors.toml` tiles, and vectorize Adwaita remaps with NumPy. Opens like Omarchy’s stock art carousels. We sample recolored Adwaita frames; we do **not** bake a full XCursor theme per tile. |
+| Snappy pickers | Mockups warm in parallel across CPU cores, **skip unchanged** `colors.toml` tiles, and vectorize Adwaita remaps with NumPy. Often feels **faster** than Omarchy’s stock Theme / Unlock carousels despite generating tiles — we skip unchanged PNGs and never bake a full XCursor theme per tile. |
 
 A full XCursor bake per theme just for the carousel would be wasted work. The
 applied `Omarchy` cursor theme *is* that bake; picker art samples the same

@@ -61,16 +61,23 @@ note "hook: $hooks/omacursor"
 
 # ------------------------------------------------------------------------ menu
 "$here/bin/omacursor" install-menu
-omarchy-shell -q omarchy.menu refresh >/dev/null 2>&1 || true
-omarchy-shell -q shell rescanPlugins >/dev/null 2>&1 || true
+# Shell service re-runs install --quiet on every boot — skip menu/shell
+# rescans there (they stack across plugins and feel like a Hypr "zoom stroke").
+if (( ! quiet )); then
+  omarchy-shell -q omarchy.menu refresh >/dev/null 2>&1 || true
+  omarchy-shell -q shell rescanPlugins >/dev/null 2>&1 || true
+fi
 
 # ----------------------------------------------------------- initial apply/sync
-if command -v omarchy >/dev/null 2>&1; then
-  "$here/bin/omacursor-sync" --quiet >/dev/null 2>&1 \
-    && note "synced cursors to current Omarchy palette" \
-    || warn "initial sync skipped (no current theme yet?)"
-else
-  warn "omarchy not on PATH; run 'omacursor sync' after your next theme set"
+# Skip on shell-service --quiet; theme-set hook keeps cursors in step after that.
+if (( ! quiet )); then
+  if command -v omarchy >/dev/null 2>&1; then
+    "$here/bin/omacursor-sync" --quiet >/dev/null 2>&1 \
+      && note "synced cursors to current Omarchy palette" \
+      || warn "initial sync skipped (no current theme yet?)"
+  else
+    warn "omarchy not on PATH; run 'omacursor sync' after your next theme set"
+  fi
 fi
 
 # ------------------------------------------------------------------- SDDM (opt)
@@ -95,11 +102,12 @@ else
   fi
 fi
 
-# Warm mockups in the background so Style > Cursors opens quickly.
-(
-  "$here/bin/omacursor" preview >/dev/null 2>&1 || true
-) &
-
+# Warm mockups once on interactive install — not on every shell-start --quiet.
+if (( ! quiet )); then
+  (
+    "$here/bin/omacursor" preview >/dev/null 2>&1 || true
+  ) &
+fi
 if command -v omarchy >/dev/null 2>&1; then
   omarchy plugin enable "$plugin_id" >/dev/null 2>&1 || true
 fi
