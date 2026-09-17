@@ -224,6 +224,7 @@ bash ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/check.sh
   [OmaBoot](https://github.com/AlxWolfenstein97/omaboot),
   [OmaVT](https://github.com/AlxWolfenstein97/omavt),
   [OmaTTY](https://github.com/AlxWolfenstein97/omatty),
+  [OmaHud](https://github.com/AlxWolfenstein97/omahud),
   [Chroma](https://github.com/AlxWolfenstein97/chroma).
 - [OMCP](https://github.com/btsouth/omarchy-omcp) — MCP desktop bridge (themes,
   workspaces, screenshots, …). Helped land the Hackerman preview shot here:
