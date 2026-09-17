@@ -40,8 +40,8 @@ chmod 755 "$here"/bin/* "$here/omarchy/theme-set-hook" "$here/check.sh" \
 
 export OMACURSOR_PLUGIN_DIR="$here"
 
-# Packages need sudo. Interactive install can ask in this TTY; Service --quiet
-# must not open floating sudo — deps are interactive-only.
+# Packages need sudo. Interactive install asks in this TTY; Service --quiet
+# opens one floating terminal once (pkgs-prompted) — not again every boot.
 pull_pkgs() {
   local -a missing=()
   local pkg
@@ -88,14 +88,9 @@ pull_pkgs() {
 # Pillow draws Style carousel mockups; numpy vectorizes Adwaita fill→outline
 # remaps (mockups + apply). Install both before warming / first sync.
 # Adwaita cursors come with Omarchy already; we recolour those (no cursor pkg).
-if (( quiet )); then
-  for pkg in python-pillow python-numpy; do
-    pacman -Q "$pkg" &>/dev/null \
-      || warn "missing $pkg — re-run install.sh interactively (or: omarchy pkg add $pkg)"
-  done
-else
-  pull_pkgs python-pillow python-numpy || true
-fi
+# Interactive: ask in this TTY. Quiet/Service: one floating terminal once
+# (pkgs-prompted), never again on later boots if dismissed.
+pull_pkgs python-pillow python-numpy || true
 if [[ ! -d /usr/share/icons/Adwaita/cursors ]]; then
   warn "Adwaita cursors missing (Omarchy normally ships them) — OmaCursor cannot recolour until they are present"
 fi
