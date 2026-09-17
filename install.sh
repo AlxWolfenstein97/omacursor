@@ -25,6 +25,14 @@ plugin_id="io.github.alxwolfenstein97.omacursor"
 hooks="$HOME/.config/omarchy/hooks/theme-set.d"
 state="$HOME/.local/state/omarchy/omacursor"
 
+# Tombstone from uninstall: Service --quiet must not resurrect wiring.
+if [[ -f $state/uninstalled ]]; then
+  if (( quiet )); then
+    exit 0
+  fi
+  rm -f "$state/uninstalled"
+fi
+
 mkdir -p "$hooks" "$state" "$HOME/.local/share/icons" "$HOME/.config/environment.d"
 
 chmod 755 "$here"/bin/* "$here/omarchy/theme-set-hook" "$here/check.sh" \
@@ -33,7 +41,7 @@ chmod 755 "$here"/bin/* "$here/omarchy/theme-set-hook" "$here/check.sh" \
 export OMACURSOR_PLUGIN_DIR="$here"
 
 # Packages need sudo. Interactive install can ask in this TTY; Service --quiet
-# cannot — open one floating terminal (once) so the password prompt is reachable.
+# must not open floating sudo — deps are interactive-only.
 pull_pkgs() {
   local -a missing=()
   local pkg
@@ -80,7 +88,14 @@ pull_pkgs() {
 # Pillow draws Style carousel mockups; numpy vectorizes Adwaita fill→outline
 # remaps (mockups + apply). Install both before warming / first sync.
 # Adwaita cursors come with Omarchy already; we recolour those (no cursor pkg).
-pull_pkgs python-pillow python-numpy || true
+if (( quiet )); then
+  for pkg in python-pillow python-numpy; do
+    pacman -Q "$pkg" &>/dev/null \
+      || warn "missing $pkg — re-run install.sh interactively (or: omarchy pkg add $pkg)"
+  done
+else
+  pull_pkgs python-pillow python-numpy || true
+fi
 if [[ ! -d /usr/share/icons/Adwaita/cursors ]]; then
   warn "Adwaita cursors missing (Omarchy normally ships them) — OmaCursor cannot recolour until they are present"
 fi
@@ -91,9 +106,9 @@ note "hook: $hooks/omacursor"
 
 # ------------------------------------------------------------------------ menu
 # Style extenders all rewrite the same extensions file. Shell-service --quiet
-# starts them in parallel — flock so we don't clobber each other's rows, then
-# refresh the live menu only when the file actually changed (avoids stacked
-# Hypr "zoom strokes" on every boot).
+# starts them in parallel — flock so we don't clobber each other's rows.
+# Quiet path updates menu.sha but skips shell refresh/rescan (avoids stacked
+# Hypr "zoom strokes" on every boot); interactive refresh when sha changes.
 menu_lock="$HOME/.local/state/omarchy/style-extenders/menu.lock"
 menu_sha="$HOME/.local/state/omarchy/style-extenders/menu.sha"
 menu_file="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
@@ -101,13 +116,15 @@ mkdir -p "$(dirname "$menu_lock")"
 (
   flock 9
   "$here/bin/omacursor" install-menu
-  if command -v omarchy-shell >/dev/null 2>&1 && [[ -f $menu_file ]]; then
+  if [[ -f $menu_file ]]; then
     new_sha=$(sha256sum "$menu_file" 2>/dev/null | awk '{print $1}')
     old_sha=$(cat "$menu_sha" 2>/dev/null || true)
     if [[ -n $new_sha && $new_sha != "$old_sha" ]]; then
-      omarchy-shell -q omarchy.menu refresh >/dev/null 2>&1 || true
-      omarchy-shell -q shell rescanPlugins >/dev/null 2>&1 || true
       printf '%s\n' "$new_sha" >"$menu_sha"
+      if (( ! quiet )) && command -v omarchy-shell >/dev/null 2>&1; then
+        omarchy-shell -q omarchy.menu refresh >/dev/null 2>&1 || true
+        omarchy-shell -q shell rescanPlugins >/dev/null 2>&1 || true
+      fi
     fi
   fi
 ) 9>"$menu_lock"

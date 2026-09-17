@@ -11,20 +11,50 @@ hooks="$HOME/.config/omarchy/hooks/theme-set.d"
 state="$HOME/.local/state/omarchy/omacursor"
 cache="$HOME/.cache/omarchy/omacursor"
 icons="$HOME/.local/share/icons"
+menu_lock="$HOME/.local/state/omarchy/style-extenders/menu.lock"
 
 note() { printf 'omacursor: %s\n' "$1"; }
 warn() { printf 'omacursor: %s\n' "$1" >&2; }
 
 export OMACURSOR_PLUGIN_DIR="$here"
-"$here/bin/omacursor" uninstall-menu || true
+mkdir -p "$(dirname "$menu_lock")"
+(
+  flock 9
+  "$here/bin/omacursor" uninstall-menu || true
+) 9>"$menu_lock"
 "$here/bin/omacursor" revert --quiet || true
 rm -f "$hooks/omacursor"
 note "removed theme-set hook"
 
-# Belt-and-suspenders: revert already deletes slots; ensure nothing remains.
+# Always strip Hypr wiring even if revert failed (avoids require of a deleted
+# omacursor-envs.lua leaving Hypr errors).
 rm -rf "$icons/Omarchy" "$icons/Omarchy-a" "$icons/Omarchy-b"
 rm -f "$HOME/.config/hypr/omacursor-envs.lua"
 rm -f "$HOME/.config/environment.d/99-omacursor.conf"
+hl="$HOME/.config/hypr/hyprland.lua"
+if [[ -f $hl ]] && grep -q -- '-- omacursor:start' "$hl"; then
+  python3 - <<'PY'
+from pathlib import Path
+import re
+
+path = Path.home() / ".config/hypr/hyprland.lua"
+text = path.read_text(encoding="utf-8")
+start, end = "-- omacursor:start", "-- omacursor:end"
+pat = re.compile(re.escape(start) + r".*?" + re.escape(end) + r"\n?", re.S)
+new = pat.sub("", text)
+if new != text:
+    path.write_text(new, encoding="utf-8")
+    print("stripped omacursor block from hyprland.lua")
+PY
+fi
+
+# Best-effort stock Adwaita restore (revert may have failed earlier).
+if command -v hyprctl >/dev/null 2>&1; then
+  size=$(hyprctl getoption cursor:size -j 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("int", 24))' 2>/dev/null || echo 24)
+  hyprctl setcursor Adwaita "$size" >/dev/null 2>&1 || true
+fi
+gsettings set org.gnome.desktop.interface cursor-theme Adwaita >/dev/null 2>&1 || true
+systemctl --user unset-environment XCURSOR_THEME >/dev/null 2>&1 || true
 
 # Optional SDDM teardown (password if sudoers already gone)
 if [[ -f $state/sddm-linked ]] || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
@@ -60,7 +90,9 @@ if [[ -f $state/sddm-linked ]] || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
 fi
 
 rm -rf "$state" "$cache"
-note "cleared state/cache"
+mkdir -p "$state"
+touch "$state/uninstalled"
+note "cleared state/cache (tombstone left so quiet install cannot resurrect)"
 
 omarchy-shell -q omarchy.menu refresh >/dev/null 2>&1 || true
 
