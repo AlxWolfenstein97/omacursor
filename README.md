@@ -147,13 +147,12 @@ alternates `Omarchy-a` / `Omarchy-b` so every apply is a *new* theme name.
 | Action | What happens |
 |--------|----------------|
 | `omarchy plugin disable …` | Shell service stops. **Theme-set hook still runs** — cursors stay synced on every desktop theme flip. |
-| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring (markers stripped even if revert fails), `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter system wiring torn down too. Shared packages stay. Leaves a state tombstone so Service `--quiet` cannot resurrect the menu. |
+| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring (markers stripped even if revert fails), `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter system wiring torn down too. Shared packages stay. Leaves a state tombstone so Service `--quiet` cannot resurrect the menu. Refresh + `rescanPlugins` so the shell drops the row. |
 | `omarchy pkg drop python-pillow` | Optional. Only if nothing else on the machine needs Pillow. |
 | `omarchy pkg drop python-numpy` | Optional. Only if nothing else on the machine needs NumPy. |
 
-Quiet Service install no longer re-pulls Pillow/NumPy or opens floating sudo
-(deps are interactive-only), and skips shell menu refresh/rescan to avoid boot
-“strokes”.
+Quiet Service install: one-shot package prompt, theme-set hook kept, menu written
+only if `// omacursor:start` markers are missing (no rewrite every boot).
 
 **Full wipe** — copy-paste to remove plugin wiring *and* packages this installer
 may have pulled (skip a `pkg drop` line if something else still needs that
