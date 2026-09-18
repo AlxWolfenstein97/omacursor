@@ -147,23 +147,21 @@ alternates `Omarchy-a` / `Omarchy-b` so every apply is a *new* theme name.
 | Action | What happens |
 |--------|----------------|
 | `omarchy plugin disable …` | Shell service stops. **Theme-set hook still runs** — cursors stay synced on every desktop theme flip. |
-| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring (markers stripped even if revert fails), `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter system wiring torn down too. Shared packages stay. Leaves a state tombstone so Service `--quiet` cannot resurrect the menu. Refresh + `rescanPlugins` so the shell drops the row. |
-| `omarchy pkg drop python-pillow` | Optional. Only if nothing else on the machine needs Pillow. |
-| `omarchy pkg drop python-numpy` | Optional. Only if nothing else on the machine needs NumPy. |
+| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter wiring torn down too. Tombstone + disable **first** so Service quiet cannot resurrect the Style row. Optional floating terminal (y/N) for `pkg drop`. |
+| `omarchy pkg drop python-pillow` | Optional. Only if nothing else needs Pillow. |
+| `omarchy pkg drop python-numpy` | Optional. Only if nothing else needs NumPy. |
 
 Quiet Service install: one-shot package prompt, theme-set hook kept, menu written
-only if `// omacursor:start` markers are missing (no rewrite every boot).
+only if `// omacursor:start` markers are missing; also scrubs orphan Style rows for
+sibling plugins removed without `uninstall.sh`.
 
-**Full wipe** — copy-paste to remove plugin wiring *and* packages this installer
-may have pulled (skip a `pkg drop` line if something else still needs that
-package):
+**Full wipe** — wiring + optional packages (skip a drop if something else needs
+it):
 
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/uninstall.sh
-omarchy plugin disable io.github.alxwolfenstein97.omacursor
 omarchy plugin remove io.github.alxwolfenstein97.omacursor
-omarchy pkg drop python-pillow
-omarchy pkg drop python-numpy
+# pkg drop offered in a floating terminal; or drop pillow / numpy by hand
 ```
 
 ## Limits, honestly

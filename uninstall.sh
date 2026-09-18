@@ -2,6 +2,7 @@
 #
 # Full clean-slate: menu, theme-set hook, Omarchy-{a,b} icon themes, Hypr/env
 # wiring, cache/state, optional SDDM system wiring. Restores stock Adwaita.
+# Optional floating terminal for shared package drop (not cursor reset).
 #
 set -euo pipefail
 
@@ -16,7 +17,38 @@ menu_lock="$HOME/.local/state/omarchy/style-extenders/menu.lock"
 note() { printf 'omacursor: %s\n' "$1"; }
 warn() { printf 'omacursor: %s\n' "$1" >&2; }
 
+offer_pkg_drop() {
+  local -a have=()
+  local pkg
+  for pkg in "$@"; do
+    pacman -Q "$pkg" &>/dev/null && have+=("$pkg")
+  done
+  ((${#have[@]})) || return 0
+  local list="${have[*]}"
+  local cmd="omarchy pkg drop $list"
+  if command -v omarchy-launch-floating-terminal-with-presentation >/dev/null 2>&1; then
+    note "optional package drop — opening floating terminal"
+    omarchy-launch-floating-terminal-with-presentation \
+      "bash -lc $(printf %q "read -r -p \"Drop $list? [y/N] \" a; case \$a in [yY]|[yY][eE][sS]) $cmd ;; *) echo skipped ;; esac")" \
+      >/dev/null 2>&1 &
+  else
+    note "optional: $cmd"
+  fi
+}
+
 export OMACURSOR_PLUGIN_DIR="$here"
+
+# Tombstone + disable first so Service --quiet cannot resurrect the Style row.
+mkdir -p "$state"
+touch "$state/uninstalled"
+if command -v omarchy >/dev/null 2>&1; then
+  omarchy plugin disable "$plugin_id" >/dev/null 2>&1 || true
+fi
+
+# Remember SDDM flag before state wipe.
+sddm_linked=0
+[[ -f $state/sddm-linked ]] && sddm_linked=1
+
 mkdir -p "$(dirname "$menu_lock")"
 (
   flock 9
@@ -57,7 +89,7 @@ gsettings set org.gnome.desktop.interface cursor-theme Adwaita >/dev/null 2>&1 |
 systemctl --user unset-environment XCURSOR_THEME >/dev/null 2>&1 || true
 
 # Optional SDDM teardown (password if sudoers already gone)
-if [[ -f $state/sddm-linked ]] || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
+if (( sddm_linked )) || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
   || [[ -d /usr/share/icons/Omarchy ]] || [[ -d /usr/local/lib/omacursor ]]; then
   note "removing SDDM cursor wiring (may prompt for password)"
   sddm_cleanup='
@@ -89,20 +121,16 @@ if [[ -f $state/sddm-linked ]] || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
   fi
 fi
 
-rm -rf "$state" "$cache"
-mkdir -p "$state"
+rm -rf "$cache"
+find "$state" -mindepth 1 ! -name uninstalled -delete 2>/dev/null || true
 touch "$state/uninstalled"
 note "cleared state/cache (tombstone left so quiet install cannot resurrect)"
 
 omarchy-shell -q omarchy.menu refresh >/dev/null 2>&1 || true
 omarchy-shell -q shell rescanPlugins >/dev/null 2>&1 || true
 
-if command -v omarchy >/dev/null 2>&1; then
-  omarchy plugin disable "$plugin_id" >/dev/null 2>&1 || true
-fi
+offer_pkg_drop python-pillow python-numpy
 
 note "done — stock Adwaita cursors; no omacursor menu/hook/slots left"
 note "plugin files remain at $here until you omit/remove the plugin"
-note "optional: omarchy pkg drop python-pillow  # if nothing else needs Pillow"
-note "optional: omarchy pkg drop python-numpy   # if nothing else needs NumPy"
 exit 0
