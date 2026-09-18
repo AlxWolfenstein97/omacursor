@@ -25,14 +25,18 @@ warn() { printf 'omacursor: %s\n' "$1" >&2; }
 plugin_id="io.github.alxwolfenstein97.omacursor"
 hooks="$HOME/.config/omarchy/hooks/theme-set.d"
 state="$HOME/.local/state/omarchy/omacursor"
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/omarchy-omacursor"
+pkgs_stamp="$runtime_dir/pkgs-prompted"
 
-# Tombstone from uninstall: Service --quiet must not resurrect wiring.
+# Tombstone from uninstall. Disable-first in uninstall.sh means a later quiet
+# Service run is a re-enable / re-add — clear tombstone + prompt stamps so the
+# Style menu and package floaters can run again (old quiet-exit left peeps stuck
+# with no floater after wipe).
 if [[ -f $state/uninstalled ]]; then
-  if (( quiet )); then
-    exit 0
-  fi
-  rm -f "$state/uninstalled"
+  rm -f "$state/uninstalled" "$pkgs_stamp" \
+    "$state/udev-prompted" "$state/udev-skipped" 2>/dev/null || true
 fi
+
 
 mkdir -p "$hooks" "$state" "$HOME/.local/share/icons" "$HOME/.config/environment.d"
 
@@ -51,7 +55,7 @@ pull_pkgs() {
     pacman -Q "$pkg" &>/dev/null || missing+=("$pkg")
   done
   if ((${#missing[@]} == 0)); then
-    rm -f "$state/pkgs-prompted"
+    rm -f "$pkgs_stamp"
     return 0
   fi
 
@@ -77,19 +81,20 @@ pull_pkgs() {
     printf '%s\n' "────────────────────────────────"
     printf '%s\n' ""
     if omarchy pkg add "${missing[@]}"; then
-      rm -f "$state/pkgs-prompted"
+      rm -f "$pkgs_stamp"
       return 0
     fi
     warn "OmaCursor could not install: ${missing[*]}"
     return 1
   fi
 
-  if [[ -f $state/pkgs-prompted ]]; then
+  if [[ -f $pkgs_stamp ]]; then
     warn "OmaCursor still missing ${missing[*]} (Style → Cursors — Adwaita recolour mockups + apply) — run: omarchy pkg add ${missing[*]}"
     return 1
   fi
   mkdir -p "$state"
-  touch "$state/pkgs-prompted"
+  mkdir -p "$runtime_dir"
+  touch "$pkgs_stamp"
   local script="$state/install-floater.sh"
   {
     printf '%s\n' '#!/usr/bin/env bash' 'set -uo pipefail'
@@ -128,7 +133,7 @@ pull_pkgs() {
 # remaps (mockups + apply). Install both before warming / first sync.
 # Adwaita cursors come with Omarchy already; we recolour those (no cursor pkg).
 # Interactive: ask in this TTY. Quiet/Service: one floating terminal once
-# (pkgs-prompted), never again on later boots if dismissed.
+# (pkgs-prompted), once per login session (runtime stamp); again after reboot or reinstall.
 pull_pkgs python-pillow python-numpy || true
 if [[ ! -d /usr/share/icons/Adwaita/cursors ]]; then
   warn "Adwaita cursors missing (Omarchy normally ships them) — OmaCursor cannot recolour until they are present"
