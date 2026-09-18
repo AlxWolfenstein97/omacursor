@@ -148,10 +148,10 @@ alternates `Omarchy-a` / `Omarchy-b` so every apply is a *new* theme name.
 |--------|----------------|
 | `omarchy plugin disable …` | Shell service stops. **Theme-set hook still runs** — cursors stay synced on every desktop theme flip. |
 | `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter wiring torn down too. Tombstone + disable **first** so Service quiet cannot resurrect the Style row. Optional floating terminal (y/N) for `pkg drop`. |
-| `omarchy pkg drop python-pillow` | Optional. Only if nothing else needs Pillow. |
+| `omarchy pkg drop python-pillow` | Optional. Itemized floater shows why + `pacman Required By`. Clear still works without Pillow. |
 | `omarchy pkg drop python-numpy` | Optional. Only if nothing else needs NumPy. |
 
-Quiet Service install: one-shot package prompt, theme-set hook kept, menu written
+Quiet Service install: one-shot package prompt (shared Pillow flock across Style plugins), theme-set hook kept, menu written
 only if `// omacursor:start` markers are missing; also scrubs orphan Style rows for
 sibling plugins removed without `uninstall.sh`.
 
