@@ -72,8 +72,8 @@ Or from a checkout:
 omarchy plugin enable io.github.alxwolfenstein97.omacursor
 ```
 
-**Optional — SDDM login cursor** (unencrypted installs where SDDM shows the
-password prompt; encrypted drives stay on Plymouth for that step):
+**Optional — SDDM login cursor** (greeter after you reach the login screen;
+encrypted installs still use Plymouth for the LUKS passphrase — no mouse there):
 
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/install.sh --with-sddm
@@ -142,6 +142,19 @@ v1.0 wrote into a single `Omarchy` directory and called `setcursor Omarchy`
 again — the compositor kept serving the old pixels until a cold start. v1.1
 alternates `Omarchy-a` / `Omarchy-b` so every apply is a *new* theme name.
 
+## Fresh VM smoke test
+
+```sh
+omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
+# Style → Cursors appears without a shell restart; carousel tiles warm (needs python-pillow)
+# Pick a loud theme; confirm the surface updates (Hypr cursor; optional SDDM cursor — works if you log out through SDDM even on encrypted (Plymouth still owns LUKS))
+# Skip install floater → logout/reboot → floater returns (shell restart does not re-nag)
+# Parallel Style plugins share one Pillow floater; siblings only ask for their own missing pkgs
+# ./uninstall.sh → reset floater (cursor theme restored / SDDM bits torn down) + optional itemized pkg drop (Pillow notes Required By)
+# Skip remove floater + disable → reinstall → uninstall again → complete the floater
+# With mangohud/goverlay kept, Pillow drop may fail — fine; clear/uninstall still work without Pillow
+```
+
 ## Disable vs remove
 
 | Action | What happens |
@@ -190,8 +203,8 @@ omarchy plugin remove io.github.alxwolfenstein97.omacursor
   `gsettings` do not reach them. Same class of problem as Steam.
 - **Plymouth / encrypted installs** — the LUKS passphrase screen has no mouse
   cursor. OmaCursor cannot theme that; use Style → Unlock / Plymouth for the
-  chrome. SDDM wiring is for **unencrypted** installs where you type the
-  password on the greeter.
+  chrome. SDDM greeter cursor still works on encrypted boxes if you log out and
+  come back through SDDM (same `--with-sddm` path as unencrypted).
 - **SDDM Wayland** — `[Theme] CursorTheme=` alone does nothing for Omarchy’s
   Hyprland greeter. `--with-sddm` overrides `CompositorCommand`, sets
   `hyprctl setcursor`, and ships self-contained default cursors. **Never
