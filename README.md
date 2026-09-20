@@ -80,7 +80,14 @@ Same for the small helpers: `./tools/install-style-menu.sh --yes` /
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.chroma/tools/arm-all-family.sh
 ```
 
-**Wipe the whole family** (teardown + remove; skips pkg Y/n):
+**Full wipe (this plugin)** — same ease as `install.sh --yes`
+(teardown + `plugin remove`; skips optional pkg Y/n; pillow etc. stay):
+
+```sh
+~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/uninstall.sh --yes
+```
+
+**Wipe the whole family** (calls each plugin’s `uninstall.sh --yes`):
 
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.chroma/tools/wipe-all-family.sh
@@ -201,13 +208,10 @@ Quiet Service install: one-shot package prompt (shared Pillow flock across Style
 only if `// omacursor:start` markers are missing; also scrubs orphan Style rows for
 sibling plugins removed without `uninstall.sh`.
 
-**Full wipe** — wiring + optional packages (skip a drop if something else needs
-it):
+**Full wipe** — one shot (`--yes` skips pkg Y/n and removes the plugin):
 
 ```sh
-~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/uninstall.sh
-omarchy plugin remove io.github.alxwolfenstein97.omacursor
-# pkg drop offered in a floating terminal; or drop pillow / numpy by hand
+~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/uninstall.sh --yes
 ```
 
 ## Limits, honestly
