@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# OmaCursor installer. Safe to re-run: theme-set hook always; menu written once
+# OmaCursor installer. Safe to re-run: theme-set hook + Style menu opt-in (marketplace consent)
 # (quiet skips rewrite when // omacursor:start markers already exist).
 #
 # Flags:
@@ -11,9 +11,15 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 quiet=0
+with_style_menu=0
+with_theme_hook=0
+arm_all=0
 with_sddm=0
 for arg in "$@"; do
   case $arg in
+    --with-style-menu) with_style_menu=1 ;;
+    --with-theme-hook) with_theme_hook=1 ;;
+    --arm-all) arm_all=1 ;;
     --quiet) quiet=1 ;;
     --with-sddm) with_sddm=1 ;;
   esac
@@ -56,6 +62,35 @@ fi
 
 
 mkdir -p "$hooks" "$state" "$HOME/.local/share/icons" "$HOME/.config/environment.d"
+
+# --- marketplace consent: Style menu / theme-set hook are opt-in -----------
+# Quiet Service must not write user config unless previously armed.
+# Interactive asks; --with-style-menu / --with-theme-hook / --arm-all force.
+# Existing hook/menu from older installs grandfather into armed-*.
+arm_theme_hook=0
+arm_style_menu=0
+[[ -f $hooks/omacursor ]] && arm_theme_hook=1
+menu_file="${menu_file:-$HOME/.config/omarchy/extensions/omarchy-menu.jsonc}"
+[[ -f $menu_file ]] && grep -qF '// omacursor:start' "$menu_file" && arm_style_menu=1
+(( with_theme_hook || arm_all )) && arm_theme_hook=1
+(( with_style_menu || arm_all )) && arm_style_menu=1
+[[ -f $state/armed-theme-hook ]] && arm_theme_hook=1
+[[ -f $state/armed-style-menu ]] && arm_style_menu=1
+if (( ! quiet )); then
+  if (( ! arm_theme_hook )); then
+    printf '%s' "omacursor: install theme-set auto-sync hook? [Y/n] "
+    read -r _ans || _ans=
+    case ${_ans:-Y} in [nN]|[nN][oO]) arm_theme_hook=0 ;; *) arm_theme_hook=1 ;; esac
+  fi
+  if (( ! arm_style_menu )); then
+    printf '%s' "omacursor: install Style → Cursors menu entry? [Y/n] "
+    read -r _ans || _ans=
+    case ${_ans:-Y} in [nN]|[nN][oO]) arm_style_menu=0 ;; *) arm_style_menu=1 ;; esac
+  fi
+fi
+if (( arm_theme_hook )); then touch "$state/armed-theme-hook"; else rm -f "$state/armed-theme-hook"; fi
+if (( arm_style_menu )); then touch "$state/armed-style-menu"; else rm -f "$state/armed-style-menu"; fi
+
 
 chmod 755 "$here"/bin/* "$here/omarchy/theme-set-hook" "$here/check.sh" \
   "$here/install.sh" "$here/uninstall.sh" 2>/dev/null || true
@@ -190,9 +225,15 @@ if [[ ! -d /usr/share/icons/Adwaita/cursors ]]; then
 fi
 
 # ------------------------------------------------------------------- theme hook
-install -m 755 "$here/omarchy/theme-set-hook" "$hooks/omacursor"
-note "hook: $hooks/omacursor"
+if (( arm_theme_hook )); then
+  install -m 755 "$here/omarchy/theme-set-hook" "$hooks/omacursor"
+  note "hook: $hooks/omacursor"
+else
+  rm -f "$hooks/omacursor"
+  note "theme-set hook skipped — run: $here/tools/install-theme-hook.sh"
+fi
 
+if (( arm_style_menu )); then
 # ------------------------------------------------------------------------ menu
 # Style extenders share omarchy-menu.jsonc — flock so parallel Services don't
 # clobber each other. Interactive: always install-menu. Quiet: only if our
@@ -283,6 +324,9 @@ ORPHANSCRUB
     fi
   fi
 ) 9>"$menu_lock"
+else
+  note "Style menu skipped — run: $here/tools/install-style-menu.sh"
+fi
 if (( ! quiet )); then
   note "Style → Cursors is live; if the row is missing, run: omarchy-shell shell rescanPlugins"
 fi
@@ -291,7 +335,7 @@ fi
 # Interactive always syncs. Quiet: one-shot if we have never synced on this
 # machine (fresh plugin add), then the theme-set hook keeps cursors in step.
 if command -v omarchy >/dev/null 2>&1; then
-  if (( ! quiet )) || [[ ! -f $state/synced ]]; then
+  if (( ! quiet )) || { [[ ! -f $state/synced ]] && (( arm_theme_hook )); }; then
     if "$here/bin/omacursor-sync" --quiet >/dev/null 2>&1; then
       touch "$state/synced"
       note "synced cursors to current Omarchy palette"

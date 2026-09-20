@@ -112,6 +112,7 @@ mkdir -p "$(dirname "$menu_lock")"
 ) 9>"$menu_lock"
 "$here/bin/omacursor" revert --quiet || true
 rm -f "$hooks/omacursor"
+rm -f "$state/armed-theme-hook" "$state/armed-style-menu"
 note "removed theme-set hook"
 
 # Always strip Hypr wiring even if revert failed (avoids require of a deleted
