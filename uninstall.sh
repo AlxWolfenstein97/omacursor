@@ -6,6 +6,11 @@
 #
 set -euo pipefail
 
+assume_yes=0
+for arg in "$@"; do
+  case $arg in --yes|-y) assume_yes=1 ;; esac
+done
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 plugin_id="io.github.alxwolfenstein97.omacursor"
 hooks="$HOME/.config/omarchy/hooks/theme-set.d"
@@ -186,7 +191,11 @@ note "cleared state/cache (tombstone left so quiet install cannot resurrect)"
 omarchy-shell -q omarchy.menu refresh >/dev/null 2>&1 || true
 omarchy-shell -q shell rescanPlugins >/dev/null 2>&1 || true
 
-offer_pkg_drop python-pillow python-numpy
+if (( ! assume_yes )); then
+  offer_pkg_drop python-pillow python-numpy
+else
+  note "pkg-drop floater skipped (--yes); packages left installed"
+fi
 
 note "done — stock Adwaita cursors; no omacursor menu/hook/slots left"
 note "plugin files remain at $here until you omit/remove the plugin"
