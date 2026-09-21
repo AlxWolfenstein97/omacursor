@@ -4,7 +4,7 @@
 # (quiet skips rewrite when // omacursor:start markers already exist).
 #
 # Flags:
-#   --quiet      shell service: restore armed wiring; no pkg floaters
+#   --quiet      shell service: restore armed wiring; no package installs
 #   --with-sddm  one-time: install Omarchy cursors system-wide for SDDM
 #                (sudo on a TTY — arm-all / interactive; pkexec otherwise)
 #
@@ -24,7 +24,7 @@ for arg in "$@"; do
     --with-theme-hook) with_theme_hook=1 ;;
     --arm-all) arm_all=1 ;;
     --yes|-y) assume_yes=1; arm_all=1 ;;
-    --quiet) quiet=1; no_pkgs=1 ;;  # Service: no pkg floaters; arm-all / interactive own deps
+    --quiet) quiet=1; no_pkgs=1 ;;  # Service: no package installs; arm-all / interactive own deps
     --no-pkgs) no_pkgs=1 ;;
     --with-sddm) with_sddm=1 ;;
   esac
@@ -55,11 +55,10 @@ pkgs_stamp="$runtime_dir/pkgs-prompted"
 
 # Tombstone from uninstall. Disable-first in uninstall.sh means a later quiet
 # Service run is a re-enable / re-add — clear tombstone + prompt stamps so the
-# Style menu and package floaters can run again (old quiet-exit left peeps stuck
-# with no floater after wipe).
+# Style menu and package prompts can run again after wipe.
 if [[ -f $state/uninstalled ]]; then
   # Per-plugin prompt stamps + shared Pillow claim. Claim survives an ignored
-  # floater and would block pillow-only plugins (OmaBoot/OmaVT/OmaOBS) on
+  # claim and would block pillow-only plugins (OmaBoot/OmaVT/OmaOBS) on
   # same-session reinstall — drop it with the tombstone. Shell restart does
   # *not* clear these (XDG_RUNTIME_DIR); only logout/reboot or reinstall.
   rm -f "$state/uninstalled" "$pkgs_stamp"     "$runtime_dir/drm-prompted"     "$state/udev-prompted" "$state/udev-skipped" 2>/dev/null || true
@@ -169,7 +168,7 @@ pull_pkgs() {
   fi
 
   note "OmaCursor needs ${missing[*]} — Style → Cursors — Adwaita recolour mockups + apply"
-  # Inline pkg add (interactive or --yes). No floaters.
+  # Inline pkg add (interactive or --yes). Prompts stay in this TTY.
   printf '%s\n' "OmaCursor"
   printf '%s\n' "io.github.alxwolfenstein97.omacursor"
   printf '%s\n' "Style → Cursors — Adwaita recolour mockups + apply"

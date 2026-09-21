@@ -2,7 +2,7 @@
 #
 # Full clean-slate: menu, theme-set hook, Omarchy-{a,b} icon themes, Hypr/env
 # wiring, cache/state, optional SDDM system wiring. Restores stock Adwaita.
-# Optional package drop prompts in this TTY (no floater). Cursor reset is inline.
+# Optional package drop prompts in this TTY (this TTY). Cursor reset is inline.
 #
 set -euo pipefail
 
@@ -50,7 +50,7 @@ try_pkg_drop() {
 }
 
 ask_pkg_drop() {
-  # Interactive — prompts in this terminal (no floater).
+  # Interactive — prompts in this terminal (this TTY).
   local -a have=()
   local pkg a req
   for pkg in "$@"; do

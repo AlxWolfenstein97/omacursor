@@ -81,22 +81,24 @@ Same for the small helpers: `./tools/install-style-menu.sh --yes` /
 ```
 
 **Full wipe (this plugin)** — same ease as `install.sh --yes`
-(teardown + `plugin remove`; best-effort `pkg drop` for deps this plugin may
-have pulled — kept only when pacman still needs them elsewhere):
+(full teardown + `plugin remove`; best-effort `pkg drop` for deps this plugin
+may have pulled — kept only when pacman still needs them elsewhere):
 
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/uninstall.sh --yes
 ```
 
-**Wipe the whole family** (each plugin’s `uninstall.sh --yes`, then a final
-shared-dep sweep — paint / hooks / menus / DRM / SDDM / root extras gone):
+**Wipe the whole family** (runs each plugin’s `uninstall.sh --yes` — same full
+teardown as a single-plugin wipe — then a final shared-dep sweep):
 
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.chroma/tools/wipe-all-family.sh
 ```
 
 Interactive `./install.sh` still asks [Y/n] if you prefer. Quiet shell restarts
-only restore what you already armed. `./uninstall.sh` clears the arm flags.
+only restore what you already armed. `./uninstall.sh --yes` is a full wipe for
+that plugin (same teardown family wipe runs); without `--yes` you get TTY
+prompts for optional package drops.
 
 
 
@@ -195,7 +197,7 @@ alternates `Omarchy-a` / `Omarchy-b` so every apply is a *new* theme name.
 omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
 # Style → Cursors appears without a shell restart; carousel tiles warm (needs python-pillow)
 # Pick a loud theme; confirm the surface updates (Hypr cursor; optional SDDM cursor — works if you log out through SDDM even on encrypted (Plymouth still owns LUKS))
-# plugin add alone + reboot → still no floater (quiet skips pkgs); run install.sh for deps/hooks
+# plugin add alone + reboot → quiet restores wiring only; run install.sh / arm-all for deps/hooks
 # Parallel install.sh: shared Pillow flock; siblings only ask for their own missing pkgs
 # ./uninstall.sh → this TTY: cursor restored / SDDM torn down + optional itemized pkg drop
 # Skip pkg prompts (n) + disable → reinstall → uninstall again → answer y if you want drops
@@ -211,8 +213,7 @@ omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
 | `omarchy pkg drop python-pillow` | Optional. TTY uninstall prompts show why + `pacman Required By`. Clear still works without Pillow. |
 | `omarchy pkg drop python-numpy` | Optional. Only if nothing else needs NumPy. |
 
-Quiet Service install (`--quiet`): **no package floaters** — restores already-armed
-wiring only. Deps + Style consent come from interactive `install.sh`, `--yes`, or
+Quiet Service install (`--quiet`): restores already-armed wiring only. Deps + Style consent come from interactive `install.sh`, `--yes`, or
 family `arm-all-family.sh`. Menu written only if `// omacursor:start` markers are
 missing; also scrubs orphan Style rows for siblings removed without `uninstall.sh`.
 
