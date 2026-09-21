@@ -204,9 +204,10 @@ omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
 | `omarchy pkg drop python-pillow` | Optional. Itemized floater shows why + `pacman Required By`. Clear still works without Pillow. |
 | `omarchy pkg drop python-numpy` | Optional. Only if nothing else needs NumPy. |
 
-Quiet Service install: one-shot package prompt (shared Pillow flock across Style plugins), theme-set hook kept, menu written
-only if `// omacursor:start` markers are missing; also scrubs orphan Style rows for
-sibling plugins removed without `uninstall.sh`.
+Quiet Service install (`--quiet`): **no package floaters** — restores already-armed
+wiring only. Deps + Style consent come from interactive `install.sh`, `--yes`, or
+family `arm-all-family.sh`. Menu written only if `// omacursor:start` markers are
+missing; also scrubs orphan Style rows for siblings removed without `uninstall.sh`.
 
 **Full wipe** — one shot (`--yes` skips pkg Y/n and removes the plugin):
 
