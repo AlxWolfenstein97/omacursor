@@ -188,7 +188,7 @@ omacursor revert               # back to stock Adwaita
 
 Hyprland (and libxcursor) key the in-memory cursor cache on the theme name.
 Writing into a single `Omarchy` directory and calling `setcursor Omarchy`
-again would keep serving the old pixels until a cold start. Alternating
+again would keep serving stale pixels until a cold start. Alternating
 `Omarchy-a` / `Omarchy-b` makes every apply a *new* theme name so the
 pointer updates live.
 
@@ -226,7 +226,7 @@ missing; also scrubs orphan Style rows for siblings removed without `uninstall.s
 
 ## Limits, honestly
 
-- **Some apps keep the old pointer until you leave the window** — after a
+- **Some apps keep the previous pointer until you leave the window** — after a
   cursor or desktop theme switch, a few clients only pick up the new theme
   when the pointer enters another window (or the same window again). Nudge
   the mouse across a window edge; not an OmaCursor bug, just how those apps
