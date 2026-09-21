@@ -101,10 +101,8 @@ chmod 755 "$here"/bin/* "$here/omarchy/theme-set-hook" "$here/check.sh" \
 
 export OMACURSOR_PLUGIN_DIR="$here"
 
-# Packages need sudo. Shared python-pillow is claimed under a flock so parallel
-# quiet Services do not each open a Pillow floater. Claim is session-scoped;
-# same-session reinstall clears it with the uninstall tombstone (shell restart does not). Scan pacman -Q first.
-# Floater: plugin header + missing pkgs only; closable via Done / default answers.
+# Packages need sudo. Shared python-pillow claimed under a flock so parallel
+# install.sh runs do not each race a Pillow pull. Scan pacman -Q first.
 pull_pkgs() {
   local -a missing=()
   local pkg
@@ -156,63 +154,26 @@ pull_pkgs() {
   fi
 
   note "OmaCursor needs ${missing[*]} — Style → Cursors — Adwaita recolour mockups + apply"
-  # --yes / family oneshot: install inline (no floater). Interactive TTY same.
-  if (( assume_yes )) || { (( ! quiet )) && [[ -t 0 || -t 1 ]]; }; then
-    printf '%s\n' "OmaCursor"
-    printf '%s\n' "io.github.alxwolfenstein97.omacursor"
-    printf '%s\n' "Style → Cursors — Adwaita recolour mockups + apply"
-    printf '%s\n' "────────────────────────────────"
-    printf '%s\n' "Needs to install (sudo / pacman) — only packages missing on this system:"
-    for pkg in "${missing[@]}"; do
-      case $pkg in
-        python-pillow) printf '  • %s — %s\n' "$pkg" 'draw Cursors carousel mockups' ;;
-        python-numpy) printf '  • %s — %s\n' "$pkg" 'fast Adwaita fill→outline remaps' ;;
-        *) printf '  • %s\n' "$pkg" ;;
-      esac
-    done
-    printf '%s\n' "────────────────────────────────"
-    printf '%s\n' ""
-    if omarchy pkg add "${missing[@]}"; then
-      rm -f "$pkgs_stamp"
-      return 0
-    fi
-    warn "OmaCursor could not install: ${missing[*]}"
-    return 1
+  # Inline pkg add (interactive or --yes). No floaters.
+  printf '%s\n' "OmaCursor"
+  printf '%s\n' "io.github.alxwolfenstein97.omacursor"
+  printf '%s\n' "Style → Cursors — Adwaita recolour mockups + apply"
+  printf '%s\n' "────────────────────────────────"
+  printf '%s\n' "Needs to install (sudo / pacman) — only packages missing on this system:"
+  for pkg in "${missing[@]}"; do
+    case $pkg in
+      python-pillow) printf '  • %s — %s\n' "$pkg" 'draw Cursors carousel mockups' ;;
+      python-numpy) printf '  • %s — %s\n' "$pkg" 'fast Adwaita fill→outline remaps' ;;
+      *) printf '  • %s\n' "$pkg" ;;
+    esac
+  done
+  printf '%s\n' "────────────────────────────────"
+  printf '%s\n' ""
+  if omarchy pkg add "${missing[@]}"; then
+    rm -f "$pkgs_stamp"
+    return 0
   fi
-
-  if [[ -f $pkgs_stamp ]]; then
-    warn "OmaCursor still missing ${missing[*]} (Style → Cursors — Adwaita recolour mockups + apply) — run: omarchy pkg add ${missing[*]}"
-    return 1
-  fi
-  mkdir -p "$runtime_dir"
-  touch "$pkgs_stamp"
-  local script="$state/install-floater.sh"
-  {
-    printf '%s\n' '#!/usr/bin/env bash' 'set -uo pipefail'
-    printf '%s\n' "printf '%s\\n' 'OmaCursor'"
-    printf '%s\n' "printf '%s\\n' 'io.github.alxwolfenstein97.omacursor'"
-    printf '%s\n' "printf '%s\\n' 'Style → Cursors — Adwaita recolour mockups + apply'"
-    printf '%s\n' "printf '%s\\n' '────────────────────────────────'"
-    printf '%s\n' "printf '%s\\n' 'Needs to install (sudo / pacman) — only packages missing on this system:'"
-    for pkg in "${missing[@]}"; do
-      case $pkg in
-        python-pillow) printf '%s\n' "printf '  • %s — %s\\n' 'python-pillow' 'draw Cursors carousel mockups'" ;;
-        python-numpy) printf '%s\n' "printf '  • %s — %s\\n' 'python-numpy' 'fast Adwaita fill→outline remaps'" ;;
-        *) printf '%s\n' "printf '  • %s\\n' $(printf %q "$pkg")" ;;
-      esac
-    done
-    printf '%s\n' "printf '%s\\n' '────────────────────────────────'"
-    printf '%s\n' "printf '%s\\n' ''"
-    printf '%s\n' "omarchy pkg add ${missing[*]}"
-
-  } >"$script"
-  chmod 755 "$script"
-  if command -v omarchy-launch-floating-terminal-with-presentation >/dev/null 2>&1; then
-    warn "OmaCursor missing ${missing[*]} (Style → Cursors — Adwaita recolour mockups + apply) — opening floating terminal"
-    omarchy-launch-floating-terminal-with-presentation "bash $(printf %q "$script")" >/dev/null 2>&1 &
-  else
-    warn "OmaCursor: run omarchy pkg add ${missing[*]}"
-  fi
+  warn "OmaCursor could not install: ${missing[*]}"
   return 1
 }
 
@@ -222,8 +183,7 @@ pull_pkgs() {
 # Pillow draws Style carousel mockups; numpy vectorizes Adwaita fill→outline
 # remaps (mockups + apply). Install both before warming / first sync.
 # Adwaita cursors come with Omarchy already; we recolour those (no cursor pkg).
-# Interactive: ask in this TTY. Quiet/Service: one floating terminal once
-# (pkgs-prompted), once per login session (runtime stamp); again after reboot or reinstall.
+# Interactive / --yes: pkg add in this TTY. Quiet Service skips pkgs (no_pkgs).
 if (( ! no_pkgs )); then
   pull_pkgs python-pillow python-numpy || true
 fi
