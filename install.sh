@@ -154,7 +154,8 @@ pull_pkgs() {
   fi
 
   note "OmaCursor needs ${missing[*]} — Style → Cursors — Adwaita recolour mockups + apply"
-  if (( ! quiet )) && [[ -t 0 || -t 1 ]]; then
+  # --yes / family oneshot: install inline (no floater). Interactive TTY same.
+  if (( assume_yes )) || { (( ! quiet )) && [[ -t 0 || -t 1 ]]; }; then
     printf '%s\n' "OmaCursor"
     printf '%s\n' "io.github.alxwolfenstein97.omacursor"
     printf '%s\n' "Style → Cursors — Adwaita recolour mockups + apply"
