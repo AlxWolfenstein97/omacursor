@@ -184,12 +184,13 @@ omacursor current
 omacursor revert               # back to stock Adwaita
 ```
 
-## Why live apply used to need a reboot
+## Why apply alternates Omarchy-a / Omarchy-b
 
 Hyprland (and libxcursor) key the in-memory cursor cache on the theme name.
-v1.0 wrote into a single `Omarchy` directory and called `setcursor Omarchy`
-again — the compositor kept serving the old pixels until a cold start. v1.1
-alternates `Omarchy-a` / `Omarchy-b` so every apply is a *new* theme name.
+Writing into a single `Omarchy` directory and calling `setcursor Omarchy`
+again would keep serving the old pixels until a cold start. Alternating
+`Omarchy-a` / `Omarchy-b` makes every apply a *new* theme name so the
+pointer updates live.
 
 ## Fresh VM smoke test
 
