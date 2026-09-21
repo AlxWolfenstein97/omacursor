@@ -22,6 +22,19 @@ menu_lock="$HOME/.local/state/omarchy/style-extenders/menu.lock"
 note() { printf 'omacursor: %s\n' "$1"; }
 warn() { printf 'omacursor: %s\n' "$1" >&2; }
 
+# Prefer sudo on a TTY (wipe-all / interactive). pkexec for GUI / non-TTY.
+elevate() {
+  if { [[ -t 0 ]] || [[ -t 1 ]]; } && command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  elif command -v pkexec >/dev/null 2>&1; then
+    pkexec "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    return 127
+  fi
+}
+
 try_pkg_drop() {
   # Best-effort: drop packages we may have pulled. If something else still
   # needs them, pacman refuses and we leave them — that is fine.
@@ -156,10 +169,10 @@ if (( sddm_linked )) || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
       rm -f /var/log/omacursor-sddm.log
       rm -rf /usr/local/lib/omacursor
   '
-  if command -v pkexec >/dev/null 2>&1; then
-    pkexec bash -c "$sddm_cleanup" || warn "could not fully remove SDDM wiring"
+  if elevate bash -c "$sddm_cleanup"; then
+    note "SDDM cursor wiring removed"
   else
-    sudo bash -c "$sddm_cleanup" || warn "could not fully remove SDDM wiring"
+    warn "could not fully remove SDDM wiring"
   fi
 fi
 

@@ -5,7 +5,8 @@
 #
 # Flags:
 #   --quiet      shell service: restore armed wiring; no pkg floaters
-#   --with-sddm  one-time: install Omarchy cursors system-wide for SDDM (pkexec)
+#   --with-sddm  one-time: install Omarchy cursors system-wide for SDDM
+#                (sudo on a TTY — arm-all / interactive; pkexec otherwise)
 #
 set -euo pipefail
 
@@ -31,6 +32,20 @@ done
 
 note() { (( quiet )) || printf 'omacursor: %s\n' "$1"; }
 warn() { printf 'omacursor: %s\n' "$1" >&2; }
+
+# Prefer sudo on a real TTY (arm-all / interactive) so the password lands in
+# the same terminal. pkexec needs a working polkit agent — brittle in VMs / SSH.
+elevate() {
+  if { [[ -t 0 ]] || [[ -t 1 ]]; } && command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  elif command -v pkexec >/dev/null 2>&1; then
+    pkexec "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    return 127
+  fi
+}
 
 plugin_id="io.github.alxwolfenstein97.omacursor"
 hooks="$HOME/.config/omarchy/hooks/theme-set.d"
@@ -315,6 +330,7 @@ else
 fi
 
 # ------------------------------------------------------------------- SDDM (opt)
+# Optional — failure must not abort cursor arming (arm-all continues either way).
 if (( with_sddm )); then
   if [[ -f $state/sddm-linked ]]; then
     note "SDDM already linked ($state/sddm-linked)"
@@ -322,12 +338,11 @@ if (( with_sddm )); then
     sudo -n "$here/bin/omacursor-sync-sddm" >/dev/null 2>&1 \
       || warn "SDDM sync refresh failed — re-run with --with-sddm after fixing sudoers"
   else
-    note "wiring SDDM cursor theme (password once)"
-    if command -v pkexec >/dev/null 2>&1; then
-      pkexec "$here/bin/omacursor-link-sddm" && note "SDDM linked" \
-        || warn "SDDM link failed — login greeter will keep stock Adwaita until this succeeds"
+    note "wiring SDDM cursor theme (password once — sudo on TTY)"
+    if elevate "$here/bin/omacursor-link-sddm"; then
+      note "SDDM linked"
     else
-      sudo "$here/bin/omacursor-link-sddm" && note "SDDM linked" || warn "SDDM link failed"
+      warn "SDDM link failed — cursors still armed; greeter stays stock until re-run --with-sddm"
     fi
   fi
 else
