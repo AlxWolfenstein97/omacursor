@@ -188,10 +188,10 @@ alternates `Omarchy-a` / `Omarchy-b` so every apply is a *new* theme name.
 omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
 # Style → Cursors appears without a shell restart; carousel tiles warm (needs python-pillow)
 # Pick a loud theme; confirm the surface updates (Hypr cursor; optional SDDM cursor — works if you log out through SDDM even on encrypted (Plymouth still owns LUKS))
-# Skip install floater → logout/reboot → floater returns (shell restart does not re-nag)
-# Parallel Style plugins share one Pillow floater; siblings only ask for their own missing pkgs
-# ./uninstall.sh → reset floater (cursor theme restored / SDDM bits torn down) + optional itemized pkg drop (Pillow notes Required By)
-# Skip remove floater + disable → reinstall → uninstall again → complete the floater
+# plugin add alone + reboot → still no floater (quiet skips pkgs); run install.sh for deps/hooks
+# Parallel install.sh: shared Pillow flock; siblings only ask for their own missing pkgs
+# ./uninstall.sh → this TTY: cursor restored / SDDM torn down + optional itemized pkg drop
+# Skip pkg prompts (n) + disable → reinstall → uninstall again → answer y if you want drops
 # With mangohud/goverlay kept, Pillow drop may fail — fine; clear/uninstall still work without Pillow
 ```
 
@@ -200,8 +200,8 @@ omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
 | Action | What happens |
 |--------|----------------|
 | `omarchy plugin disable …` | Shell service stops. **Theme-set hook still runs** — cursors stay synced on every desktop theme flip. |
-| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter wiring torn down too. Tombstone + disable **first** so Service quiet cannot resurrect the Style row. Optional floating terminal (y/N) for `pkg drop`. |
-| `omarchy pkg drop python-pillow` | Optional. Itemized floater shows why + `pacman Required By`. Clear still works without Pillow. |
+| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter wiring torn down too. Tombstone + disable **first** so Service quiet cannot resurrect the Style row. Optional TTY y/N for `pkg drop`. |
+| `omarchy pkg drop python-pillow` | Optional. TTY uninstall prompts show why + `pacman Required By`. Clear still works without Pillow. |
 | `omarchy pkg drop python-numpy` | Optional. Only if nothing else needs NumPy. |
 
 Quiet Service install (`--quiet`): **no package floaters** — restores already-armed
