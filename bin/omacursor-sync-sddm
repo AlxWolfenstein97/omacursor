@@ -14,6 +14,7 @@ import pwd
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 CONF = Path("/etc/sddm.conf.d/99-omacursor.conf")
@@ -124,11 +125,8 @@ def publish(src: Path) -> None:
         dest = staging_root / "Omarchy"
         shutil.copytree(src, dest, symlinks=True)
         _write_index(dest / "index.theme", "Omarchy")
-        if SYSTEM_ICONS.exists() or SYSTEM_ICONS.is_symlink():
-            if SYSTEM_ICONS.is_dir() and not SYSTEM_ICONS.is_symlink():
-                shutil.rmtree(SYSTEM_ICONS)
-            else:
-                SYSTEM_ICONS.unlink()
+        (dest / ".omacursor-owned").write_text("omacursor\n", encoding="utf-8")
+        _remove_system_omarchy()
         shutil.move(str(dest), str(SYSTEM_ICONS))
         os.chmod(SYSTEM_ICONS, 0o755)
         for root, dirs, files in os.walk(SYSTEM_ICONS):
@@ -151,11 +149,11 @@ def ensure_adwaita_not_hijacked() -> None:
 
 
 def _replace_dir_preserving(dest: Path, *, prebak: Path, owned_marker: Path) -> None:
-    """Remove dest only after preserving any pre-plugin tree once.
+    """Remove dest only when we own it; otherwise preserve the current tree.
 
-    On first touch of a real directory we do not own, rename it to *prebak*.
-    Subsequent replaces may rmtree only when we already own the path (marker)
-    or already have a prebak from the first pass.
+    Ownership is the marker file, not the mere presence of an older prebak.
+    A user who replaces our published tree after a prior sync must not lose
+    that replacement on the next sync/revert.
     """
     if not (dest.exists() or dest.is_symlink()):
         return
@@ -165,29 +163,75 @@ def _replace_dir_preserving(dest: Path, *, prebak: Path, owned_marker: Path) -> 
     if not dest.is_dir():
         dest.unlink()
         return
-    if owned_marker.is_file() or prebak.exists():
+    if owned_marker.is_file():
         shutil.rmtree(dest)
+        # Marker lives beside the tree — drop it so a user-replaced directory
+        # that appears later is not treated as still ours.
+        owned_marker.unlink(missing_ok=True)
         return
-    # First encounter of foreign content — keep it.
-    dest.rename(prebak)
+    # Foreign / user-replaced tree — keep it (unique backup if prebak taken).
+    if prebak.exists():
+        stamp = time.strftime("%Y%m%d%H%M%S")
+        stamped = prebak.with_name(f"{prebak.name}.{stamp}")
+        dest.rename(stamped)
+    else:
+        dest.rename(prebak)
 
 
 def _restore_dir_from_prebak(dest: Path, *, prebak: Path, owned_marker: Path) -> None:
-    """Restore pre-plugin tree when present; otherwise drop only plugin-owned dirs."""
+    """Restore pre-plugin tree only after removing a plugin-owned destination."""
     if dest.exists() or dest.is_symlink():
         if dest.is_dir() and not dest.is_symlink():
-            # Only remove if we own it or we have a prebak to put back.
-            if owned_marker.is_file() or prebak.exists():
+            if owned_marker.is_file():
                 shutil.rmtree(dest)
             else:
-                # Unknown foreign tree — leave it alone.
+                # Current tree is not ours — leave it; do not clobber with prebak.
                 owned_marker.unlink(missing_ok=True)
                 return
         else:
-            dest.unlink()
+            if owned_marker.is_file() or dest.is_symlink():
+                dest.unlink()
+            else:
+                owned_marker.unlink(missing_ok=True)
+                return
     if prebak.exists():
         prebak.rename(dest)
     owned_marker.unlink(missing_ok=True)
+
+
+def _omarchy_tree_owned(path: Path) -> bool:
+    """True when /usr/share/icons/Omarchy looks like OmaCursor published it."""
+    if (path / ".omacursor-owned").is_file():
+        return True
+    index = path / "index.theme"
+    if index.is_file():
+        try:
+            text = index.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        return "OmaCursor recolor" in text or "Managed by OmaCursor" in text
+    return False
+
+
+def _remove_system_omarchy() -> None:
+    """Drop /usr/share/icons/Omarchy only when we own it; else preserve."""
+    if not (SYSTEM_ICONS.exists() or SYSTEM_ICONS.is_symlink()):
+        return
+    if SYSTEM_ICONS.is_symlink():
+        SYSTEM_ICONS.unlink()
+        return
+    if not SYSTEM_ICONS.is_dir():
+        SYSTEM_ICONS.unlink()
+        return
+    if _omarchy_tree_owned(SYSTEM_ICONS):
+        shutil.rmtree(SYSTEM_ICONS)
+        return
+    prebak = Path("/usr/share/icons/Omarchy.omacursor-prebak")
+    if prebak.exists():
+        stamp = time.strftime("%Y%m%d%H%M%S")
+        SYSTEM_ICONS.rename(prebak.with_name(f"Omarchy.omacursor-prebak.{stamp}"))
+    else:
+        SYSTEM_ICONS.rename(prebak)
 
 
 def point_system_default() -> None:
@@ -323,11 +367,12 @@ def restore_system_default() -> None:
 
 
 def revert() -> None:
-    if SYSTEM_ICONS.exists() or SYSTEM_ICONS.is_symlink():
-        if SYSTEM_ICONS.is_dir() and not SYSTEM_ICONS.is_symlink():
-            shutil.rmtree(SYSTEM_ICONS)
-        else:
-            SYSTEM_ICONS.unlink()
+    _remove_system_omarchy()
+    # If we preserved a foreign Omarchy tree as prebak and our owned tree is gone,
+    # put the foreign tree back.
+    prebak = Path("/usr/share/icons/Omarchy.omacursor-prebak")
+    if prebak.exists() and not SYSTEM_ICONS.exists():
+        prebak.rename(SYSTEM_ICONS)
     restore_system_default()
     for path in (
         CONF,

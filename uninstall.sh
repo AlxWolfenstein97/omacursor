@@ -148,13 +148,25 @@ if (( sddm_linked )) || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
   || [[ -d /usr/share/icons/Omarchy ]] || [[ -d /usr/local/lib/omacursor ]]; then
   note "removing SDDM cursor wiring (may prompt for password)"
   sddm_cleanup='
-      rm -rf /usr/share/icons/Omarchy
+      # Only remove /usr/share/icons/Omarchy when OmaCursor owns it.
+      if [[ -f /usr/share/icons/Omarchy/.omacursor-owned ]] \
+        || { [[ -f /usr/share/icons/Omarchy/index.theme ]] \
+          && grep -q "OmaCursor recolor" /usr/share/icons/Omarchy/index.theme 2>/dev/null; }; then
+        rm -rf /usr/share/icons/Omarchy
+      elif [[ -d /usr/share/icons/Omarchy.omacursor-prebak ]]; then
+        : # leave a foreign Omarchy tree alone; prebak stays for manual recovery
+      elif [[ -d /usr/share/icons/Omarchy ]]; then
+        : # foreign Omarchy tree — do not delete
+      fi
+      if [[ -d /usr/share/icons/Omarchy.omacursor-prebak && ! -e /usr/share/icons/Omarchy ]]; then
+        mv /usr/share/icons/Omarchy.omacursor-prebak /usr/share/icons/Omarchy
+      fi
       # Preserve any pre-OmaCursor default/cursors tree; never wipe foreign SDDM icons.
-      if [[ -d /usr/share/icons/default/cursors.omacursor-prebak ]]; then
+      if [[ -f /usr/share/icons/default/.omacursor-cursors-owned ]]; then
         rm -rf /usr/share/icons/default/cursors
-        mv /usr/share/icons/default/cursors.omacursor-prebak /usr/share/icons/default/cursors
-      elif [[ -f /usr/share/icons/default/.omacursor-cursors-owned ]]; then
-        rm -rf /usr/share/icons/default/cursors
+        if [[ -d /usr/share/icons/default/cursors.omacursor-prebak ]]; then
+          mv /usr/share/icons/default/cursors.omacursor-prebak /usr/share/icons/default/cursors
+        fi
       fi
       rm -f /usr/share/icons/default/.omacursor-cursors-owned
       if [[ -L /usr/share/icons/Adwaita/cursors ]]; then
@@ -169,16 +181,16 @@ if (( sddm_linked )) || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
       else
         printf "[Icon Theme]\nInherits=Adwaita\n" > /usr/share/icons/default/index.theme
       fi
-      if [[ -d /var/lib/sddm/.icons/default/cursors.omacursor-prebak ]]; then
+      if [[ -f /var/lib/sddm/.icons/default/.omacursor-owned ]]; then
         rm -rf /var/lib/sddm/.icons/default/cursors
-        mv /var/lib/sddm/.icons/default/cursors.omacursor-prebak /var/lib/sddm/.icons/default/cursors
+        if [[ -d /var/lib/sddm/.icons/default/cursors.omacursor-prebak ]]; then
+          mv /var/lib/sddm/.icons/default/cursors.omacursor-prebak /var/lib/sddm/.icons/default/cursors
+        else
+          rm -f /var/lib/sddm/.icons/default/index.theme
+          rmdir /var/lib/sddm/.icons/default 2>/dev/null || true
+          rmdir /var/lib/sddm/.icons 2>/dev/null || true
+        fi
         rm -f /var/lib/sddm/.icons/default/.omacursor-owned
-      elif [[ -f /var/lib/sddm/.icons/default/.omacursor-owned ]]; then
-        rm -rf /var/lib/sddm/.icons/default/cursors
-        rm -f /var/lib/sddm/.icons/default/index.theme
-        rm -f /var/lib/sddm/.icons/default/.omacursor-owned
-        rmdir /var/lib/sddm/.icons/default 2>/dev/null || true
-        rmdir /var/lib/sddm/.icons 2>/dev/null || true
       else
         rm -f /var/lib/sddm/.icons/default/.omacursor-owned
       fi
