@@ -23,9 +23,16 @@ DEFAULT_DIR = Path("/usr/share/icons/default")
 DEFAULT_THEME = DEFAULT_DIR / "index.theme"
 DEFAULT_BAK = DEFAULT_DIR / "index.theme.omacursor-bak"
 DEFAULT_CURSORS = DEFAULT_DIR / "cursors"
+DEFAULT_CURSORS_PREBAK = DEFAULT_DIR / "cursors.omacursor-prebak"
+DEFAULT_CURSORS_OWNED = DEFAULT_DIR / ".omacursor-cursors-owned"
 ADWAITA_CURSORS = Path("/usr/share/icons/Adwaita/cursors")
 ADWAITA_CURSORS_BAK = Path("/usr/share/icons/Adwaita/cursors.omacursor-stock")
-SDDM_HOME_ICONS = Path("/var/lib/sddm/.icons/default/index.theme")
+SDDM_ICONS = Path("/var/lib/sddm/.icons")
+SDDM_DEFAULT = SDDM_ICONS / "default"
+SDDM_HOME_ICONS = SDDM_DEFAULT / "index.theme"
+SDDM_CURSORS = SDDM_DEFAULT / "cursors"
+SDDM_CURSORS_PREBAK = SDDM_DEFAULT / "cursors.omacursor-prebak"
+SDDM_OWNED = SDDM_DEFAULT / ".omacursor-owned"
 LIBDIR = Path("/usr/local/lib/omacursor")
 COMPOSITOR = LIBDIR / "sddm-compositor"
 HYPR_CFG = Path("/etc/sddm/omacursor-hyprland.lua")
@@ -143,6 +150,46 @@ def ensure_adwaita_not_hijacked() -> None:
         ADWAITA_CURSORS_BAK.rename(ADWAITA_CURSORS)
 
 
+def _replace_dir_preserving(dest: Path, *, prebak: Path, owned_marker: Path) -> None:
+    """Remove dest only after preserving any pre-plugin tree once.
+
+    On first touch of a real directory we do not own, rename it to *prebak*.
+    Subsequent replaces may rmtree only when we already own the path (marker)
+    or already have a prebak from the first pass.
+    """
+    if not (dest.exists() or dest.is_symlink()):
+        return
+    if dest.is_symlink():
+        dest.unlink()
+        return
+    if not dest.is_dir():
+        dest.unlink()
+        return
+    if owned_marker.is_file() or prebak.exists():
+        shutil.rmtree(dest)
+        return
+    # First encounter of foreign content — keep it.
+    dest.rename(prebak)
+
+
+def _restore_dir_from_prebak(dest: Path, *, prebak: Path, owned_marker: Path) -> None:
+    """Restore pre-plugin tree when present; otherwise drop only plugin-owned dirs."""
+    if dest.exists() or dest.is_symlink():
+        if dest.is_dir() and not dest.is_symlink():
+            # Only remove if we own it or we have a prebak to put back.
+            if owned_marker.is_file() or prebak.exists():
+                shutil.rmtree(dest)
+            else:
+                # Unknown foreign tree — leave it alone.
+                owned_marker.unlink(missing_ok=True)
+                return
+        else:
+            dest.unlink()
+    if prebak.exists():
+        prebak.rename(dest)
+    owned_marker.unlink(missing_ok=True)
+
+
 def point_system_default() -> None:
     """Self-contained default theme (cursors/) — do NOT touch Adwaita."""
     ensure_adwaita_not_hijacked()
@@ -152,12 +199,11 @@ def point_system_default() -> None:
         shutil.copy2(DEFAULT_THEME, DEFAULT_BAK)
 
     # Full cursor tree under default/ so "default" works without inheriting Adwaita.
-    if DEFAULT_CURSORS.exists() or DEFAULT_CURSORS.is_symlink():
-        if DEFAULT_CURSORS.is_dir() and not DEFAULT_CURSORS.is_symlink():
-            shutil.rmtree(DEFAULT_CURSORS)
-        else:
-            DEFAULT_CURSORS.unlink()
+    _replace_dir_preserving(
+        DEFAULT_CURSORS, prebak=DEFAULT_CURSORS_PREBAK, owned_marker=DEFAULT_CURSORS_OWNED
+    )
     shutil.copytree(SYSTEM_ICONS / "cursors", DEFAULT_CURSORS, symlinks=True)
+    DEFAULT_CURSORS_OWNED.write_text("omacursor\n", encoding="utf-8")
 
     DEFAULT_THEME.write_text(
         (
@@ -172,30 +218,30 @@ def point_system_default() -> None:
     )
     os.chmod(DEFAULT_THEME, 0o644)
 
-    SDDM_HOME_ICONS.parent.mkdir(parents=True, exist_ok=True)
+    SDDM_DEFAULT.mkdir(parents=True, exist_ok=True)
     SDDM_HOME_ICONS.write_text(
         "[Icon Theme]\nName=default\nInherits=hicolor\n",
         encoding="utf-8",
     )
-    # Also give the sddm user a cursors tree
-    sddm_cursors = SDDM_HOME_ICONS.parent / "cursors"
-    if sddm_cursors.exists() or sddm_cursors.is_symlink():
-        if sddm_cursors.is_dir() and not sddm_cursors.is_symlink():
-            shutil.rmtree(sddm_cursors)
-        else:
-            sddm_cursors.unlink()
-    shutil.copytree(SYSTEM_ICONS / "cursors", sddm_cursors, symlinks=True)
+    # Also give the sddm user a cursors tree — preserve any pre-existing tree once.
+    _replace_dir_preserving(
+        SDDM_CURSORS, prebak=SDDM_CURSORS_PREBAK, owned_marker=SDDM_OWNED
+    )
+    shutil.copytree(SYSTEM_ICONS / "cursors", SDDM_CURSORS, symlinks=True)
+    SDDM_OWNED.write_text("omacursor\n", encoding="utf-8")
     try:
         pw = pwd.getpwnam("sddm")
         for path in (
-            Path("/var/lib/sddm/.icons"),
-            Path("/var/lib/sddm/.icons/default"),
+            SDDM_ICONS,
+            SDDM_DEFAULT,
             SDDM_HOME_ICONS,
+            SDDM_CURSORS,
+            SDDM_OWNED,
         ):
             if path.exists():
                 os.chmod(path if path.is_dir() else path.parent, 0o755)
                 os.chown(path, pw.pw_uid, pw.pw_gid)
-        for root, dirs, files in os.walk(Path("/var/lib/sddm/.icons")):
+        for root, dirs, files in os.walk(SDDM_DEFAULT):
             for d in dirs:
                 os.chown(Path(root) / d, pw.pw_uid, pw.pw_gid)
             for f in files:
@@ -240,21 +286,40 @@ def ensure_wiring(size: int) -> None:
 
 def restore_system_default() -> None:
     ensure_adwaita_not_hijacked()
-    if DEFAULT_CURSORS.exists() or DEFAULT_CURSORS.is_symlink():
-        if DEFAULT_CURSORS.is_dir() and not DEFAULT_CURSORS.is_symlink():
-            shutil.rmtree(DEFAULT_CURSORS)
-        else:
-            DEFAULT_CURSORS.unlink()
+    had_default_prebak = DEFAULT_CURSORS_PREBAK.exists()
+    _restore_dir_from_prebak(
+        DEFAULT_CURSORS, prebak=DEFAULT_CURSORS_PREBAK, owned_marker=DEFAULT_CURSORS_OWNED
+    )
     if DEFAULT_BAK.is_file():
         shutil.copy2(DEFAULT_BAK, DEFAULT_THEME)
         DEFAULT_BAK.unlink()
-    elif DEFAULT_THEME.is_file():
-        DEFAULT_THEME.write_text(
-            "[Icon Theme]\nInherits=Adwaita\n",
-            encoding="utf-8",
-        )
-    if Path("/var/lib/sddm/.icons").exists():
-        shutil.rmtree(Path("/var/lib/sddm/.icons"), ignore_errors=True)
+    elif not had_default_prebak and not DEFAULT_CURSORS.exists():
+        # We created default/index.theme from scratch — reset to stock inherit.
+        if DEFAULT_THEME.is_file():
+            DEFAULT_THEME.write_text(
+                "[Icon Theme]\nInherits=Adwaita\n",
+                encoding="utf-8",
+            )
+
+    # SDDM home icons: only touch plugin-owned paths under .icons/default/.
+    # Never wipe the whole /var/lib/sddm/.icons tree (other themes may live there).
+    had_sddm_prebak = SDDM_CURSORS_PREBAK.exists()
+    _restore_dir_from_prebak(
+        SDDM_CURSORS, prebak=SDDM_CURSORS_PREBAK, owned_marker=SDDM_OWNED
+    )
+    if not had_sddm_prebak and not SDDM_CURSORS.exists():
+        SDDM_HOME_ICONS.unlink(missing_ok=True)
+        SDDM_OWNED.unlink(missing_ok=True)
+        try:
+            SDDM_DEFAULT.rmdir()
+        except OSError:
+            pass
+        try:
+            SDDM_ICONS.rmdir()
+        except OSError:
+            pass
+    else:
+        SDDM_OWNED.unlink(missing_ok=True)
 
 
 def revert() -> None:

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.alxwolfenstein97.omacursor",
   "name": "OmaCursor",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "author": "AlxWolfenstein97",
   "license": "MIT",
   "description": "Style menu Adwaita cursor recolors. Not broken \u2014 read the git README to arm theme hooks + Style menu.",
