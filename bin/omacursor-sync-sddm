@@ -167,22 +167,16 @@ def _marker_owns_dest(dest: Path, owned_marker: Path) -> bool:
 def _replace_dir_preserving(dest: Path, *, prebak: Path, owned_marker: Path) -> None:
     """Remove dest only when we own it; otherwise preserve the current tree.
 
-    Ownership is a marker *inside* dest, not an older prebak or a sibling file.
-    A user who replaces our published tree after a prior sync must not lose
-    that replacement on the next sync/revert.
+    Ownership is a marker *inside* a real directory. Symlinks are always treated
+    as foreign (we publish real dirs) — rename them aside, never unlink, so a
+    user replacement link at default/cursors or sddm cursors survives sync.
     """
     if not (dest.exists() or dest.is_symlink()):
         return
-    if dest.is_symlink():
-        dest.unlink()
-        return
-    if not dest.is_dir():
-        dest.unlink()
-        return
-    if _marker_owns_dest(dest, owned_marker):
+    if dest.is_dir() and not dest.is_symlink() and _marker_owns_dest(dest, owned_marker):
         shutil.rmtree(dest)
         return
-    # Foreign / user-replaced tree — keep it (unique backup if prebak taken).
+    # Foreign dir, symlink, or plain file — keep via rename (never unlink).
     if prebak.exists():
         stamp = time.strftime("%Y%m%d%H%M%S")
         stamped = prebak.with_name(f"{prebak.name}.{stamp}")
@@ -194,17 +188,18 @@ def _replace_dir_preserving(dest: Path, *, prebak: Path, owned_marker: Path) -> 
 def _restore_dir_from_prebak(dest: Path, *, prebak: Path, owned_marker: Path) -> None:
     """Restore pre-plugin tree only after removing a plugin-owned destination."""
     if dest.exists() or dest.is_symlink():
-        if dest.is_dir() and not dest.is_symlink():
+        if dest.is_symlink():
+            # User replacement link — leave it; do not clobber with prebak.
+            return
+        if dest.is_dir():
             if _marker_owns_dest(dest, owned_marker):
                 shutil.rmtree(dest)
             else:
-                # Current tree is not ours — leave it; do not clobber with prebak.
+                # Current tree is not ours — leave it.
                 return
         else:
-            if _marker_owns_dest(dest, owned_marker) or dest.is_symlink():
-                dest.unlink()
-            else:
-                return
+            # Plain file without an inside marker — leave it.
+            return
     if prebak.exists():
         prebak.rename(dest)
 
