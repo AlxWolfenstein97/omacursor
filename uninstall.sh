@@ -162,7 +162,8 @@ if (( sddm_linked )) || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
         mv /usr/share/icons/Omarchy.omacursor-prebak /usr/share/icons/Omarchy
       fi
       # Preserve any pre-OmaCursor default/cursors tree; never wipe foreign SDDM icons.
-      if [[ -f /usr/share/icons/default/.omacursor-cursors-owned ]]; then
+      # Ownership marker must live *inside* cursors/ (legacy sibling is not enough).
+      if [[ -f /usr/share/icons/default/cursors/.omacursor-owned ]]; then
         rm -rf /usr/share/icons/default/cursors
         if [[ -d /usr/share/icons/default/cursors.omacursor-prebak ]]; then
           mv /usr/share/icons/default/cursors.omacursor-prebak /usr/share/icons/default/cursors
@@ -181,7 +182,7 @@ if (( sddm_linked )) || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
       else
         printf "[Icon Theme]\nInherits=Adwaita\n" > /usr/share/icons/default/index.theme
       fi
-      if [[ -f /var/lib/sddm/.icons/default/.omacursor-owned ]]; then
+      if [[ -f /var/lib/sddm/.icons/default/cursors/.omacursor-owned ]]; then
         rm -rf /var/lib/sddm/.icons/default/cursors
         if [[ -d /var/lib/sddm/.icons/default/cursors.omacursor-prebak ]]; then
           mv /var/lib/sddm/.icons/default/cursors.omacursor-prebak /var/lib/sddm/.icons/default/cursors
@@ -190,10 +191,8 @@ if (( sddm_linked )) || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
           rmdir /var/lib/sddm/.icons/default 2>/dev/null || true
           rmdir /var/lib/sddm/.icons 2>/dev/null || true
         fi
-        rm -f /var/lib/sddm/.icons/default/.omacursor-owned
-      else
-        rm -f /var/lib/sddm/.icons/default/.omacursor-owned
       fi
+      rm -f /var/lib/sddm/.icons/default/.omacursor-owned
       rm -f /etc/sddm.conf.d/99-omacursor.conf
       rm -f /etc/sddm/omacursor-hyprland.lua
       rm -f /etc/sudoers.d/omacursor_sddm /etc/sudoers.d/omacursor-sddm
@@ -208,6 +207,7 @@ if (( sddm_linked )) || [[ -f /etc/sddm.conf.d/99-omacursor.conf ]] \
 fi
 
 rm -rf "$cache"
+mapfile -t pkgs_we_pulled < <(grep -v '^[[:space:]]*$' "$state/pkgs-installed" 2>/dev/null || true)
 find "$state" -mindepth 1 ! -name uninstalled -delete 2>/dev/null || true
 touch "$state/uninstalled"
 note "cleared state/cache (tombstone left so quiet install cannot resurrect)"
@@ -215,11 +215,13 @@ note "cleared state/cache (tombstone left so quiet install cannot resurrect)"
 omarchy-shell -q omarchy.menu refresh >/dev/null 2>&1 || true
 omarchy-shell -q shell rescanPlugins >/dev/null 2>&1 || true
 
-if (( ! assume_yes )); then
-  ask_pkg_drop python-pillow python-numpy
+if ((${#pkgs_we_pulled[@]} == 0)); then
+  note "no package ledger — skipping pkg drop (nothing this install recorded pulling)"
+elif (( ! assume_yes )); then
+  ask_pkg_drop "${pkgs_we_pulled[@]}"
 else
-  note "full wipe (--yes): trying package drops (kept if still required elsewhere)"
-  try_pkg_drop python-pillow python-numpy
+  note "full wipe (--yes): dropping only packages this install recorded pulling"
+  try_pkg_drop "${pkgs_we_pulled[@]}"
 fi
 
 note "done — stock Adwaita cursors; no omacursor menu/hook/slots left"

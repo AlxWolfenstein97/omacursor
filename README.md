@@ -81,8 +81,8 @@ Same for the small helpers: `./tools/install-style-menu.sh --yes` /
 ```
 
 **Full wipe (this plugin)** — same ease as `install.sh --yes`
-(full teardown + `plugin remove`; best-effort `pkg drop` for deps this plugin
-may have pulled — kept only when pacman still needs them elsewhere):
+(full teardown + `plugin remove`; best-effort `pkg drop` only for packages this install
+recorded pulling (pre-existing deps stay) — kept only when pacman still needs them elsewhere):
 
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/uninstall.sh --yes
@@ -210,7 +210,7 @@ omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
 | Action | What happens |
 |--------|----------------|
 | `omarchy plugin disable …` | Shell service stops. **Theme-set hook still runs** — cursors stay synced on every desktop theme flip. |
-| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter wiring torn down too. Tombstone + disable **first** so Service quiet cannot resurrect the Style row. Optional TTY y/N for `pkg drop`. |
+| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter wiring torn down too. Tombstone + disable **first** so Service quiet cannot resurrect the Style row. Optional TTY y/N for `pkg drop` of packages this install recorded pulling. |
 | `omarchy pkg drop python-pillow` | Optional. TTY uninstall prompts show why + `pacman Required By`. Clear still works without Pillow. |
 | `omarchy pkg drop python-numpy` | Optional. Only if nothing else needs NumPy. |
 
@@ -218,7 +218,7 @@ Quiet Service install (`--quiet`): restores already-armed wiring only. Deps + St
 family `arm-all-family.sh`. Menu written only if `// omacursor:start` markers are
 missing; also scrubs orphan Style rows for siblings removed without `uninstall.sh`.
 
-**Full wipe** — one shot (`--yes` skips pkg Y/n, best-effort drops deps this plugin may have pulled if nothing else needs them, and removes the plugin):
+**Full wipe** — one shot (`--yes` skips pkg Y/n, best-effort drops packages this install recorded pulling (if nothing else needs them), and removes the plugin):
 
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/uninstall.sh --yes

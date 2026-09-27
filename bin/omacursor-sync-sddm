@@ -25,7 +25,10 @@ DEFAULT_THEME = DEFAULT_DIR / "index.theme"
 DEFAULT_BAK = DEFAULT_DIR / "index.theme.omacursor-bak"
 DEFAULT_CURSORS = DEFAULT_DIR / "cursors"
 DEFAULT_CURSORS_PREBAK = DEFAULT_DIR / "cursors.omacursor-prebak"
-DEFAULT_CURSORS_OWNED = DEFAULT_DIR / ".omacursor-cursors-owned"
+# Ownership marker lives *inside* the cursors tree so a user-replaced
+# destination cannot inherit a leftover sibling marker.
+DEFAULT_CURSORS_OWNED = DEFAULT_CURSORS / ".omacursor-owned"
+DEFAULT_CURSORS_OWNED_LEGACY = DEFAULT_DIR / ".omacursor-cursors-owned"
 ADWAITA_CURSORS = Path("/usr/share/icons/Adwaita/cursors")
 ADWAITA_CURSORS_BAK = Path("/usr/share/icons/Adwaita/cursors.omacursor-stock")
 SDDM_ICONS = Path("/var/lib/sddm/.icons")
@@ -33,7 +36,8 @@ SDDM_DEFAULT = SDDM_ICONS / "default"
 SDDM_HOME_ICONS = SDDM_DEFAULT / "index.theme"
 SDDM_CURSORS = SDDM_DEFAULT / "cursors"
 SDDM_CURSORS_PREBAK = SDDM_DEFAULT / "cursors.omacursor-prebak"
-SDDM_OWNED = SDDM_DEFAULT / ".omacursor-owned"
+SDDM_OWNED = SDDM_CURSORS / ".omacursor-owned"
+SDDM_OWNED_LEGACY = SDDM_DEFAULT / ".omacursor-owned"
 LIBDIR = Path("/usr/local/lib/omacursor")
 COMPOSITOR = LIBDIR / "sddm-compositor"
 HYPR_CFG = Path("/etc/sddm/omacursor-hyprland.lua")
@@ -148,10 +152,22 @@ def ensure_adwaita_not_hijacked() -> None:
         ADWAITA_CURSORS_BAK.rename(ADWAITA_CURSORS)
 
 
+def _marker_owns_dest(dest: Path, owned_marker: Path) -> bool:
+    """True only when the ownership marker is bound to *this* destination.
+
+    Marker must live inside dest (dest/.omacursor-owned). A sibling marker from
+    an older install does not authorize deleting a replaced tree.
+    """
+    try:
+        return owned_marker.is_file() and owned_marker.resolve().parent == dest.resolve()
+    except OSError:
+        return owned_marker.is_file() and owned_marker.parent == dest
+
+
 def _replace_dir_preserving(dest: Path, *, prebak: Path, owned_marker: Path) -> None:
     """Remove dest only when we own it; otherwise preserve the current tree.
 
-    Ownership is the marker file, not the mere presence of an older prebak.
+    Ownership is a marker *inside* dest, not an older prebak or a sibling file.
     A user who replaces our published tree after a prior sync must not lose
     that replacement on the next sync/revert.
     """
@@ -163,11 +179,8 @@ def _replace_dir_preserving(dest: Path, *, prebak: Path, owned_marker: Path) -> 
     if not dest.is_dir():
         dest.unlink()
         return
-    if owned_marker.is_file():
+    if _marker_owns_dest(dest, owned_marker):
         shutil.rmtree(dest)
-        # Marker lives beside the tree — drop it so a user-replaced directory
-        # that appears later is not treated as still ours.
-        owned_marker.unlink(missing_ok=True)
         return
     # Foreign / user-replaced tree — keep it (unique backup if prebak taken).
     if prebak.exists():
@@ -182,21 +195,18 @@ def _restore_dir_from_prebak(dest: Path, *, prebak: Path, owned_marker: Path) ->
     """Restore pre-plugin tree only after removing a plugin-owned destination."""
     if dest.exists() or dest.is_symlink():
         if dest.is_dir() and not dest.is_symlink():
-            if owned_marker.is_file():
+            if _marker_owns_dest(dest, owned_marker):
                 shutil.rmtree(dest)
             else:
                 # Current tree is not ours — leave it; do not clobber with prebak.
-                owned_marker.unlink(missing_ok=True)
                 return
         else:
-            if owned_marker.is_file() or dest.is_symlink():
+            if _marker_owns_dest(dest, owned_marker) or dest.is_symlink():
                 dest.unlink()
             else:
-                owned_marker.unlink(missing_ok=True)
                 return
     if prebak.exists():
         prebak.rename(dest)
-    owned_marker.unlink(missing_ok=True)
 
 
 def _omarchy_tree_owned(path: Path) -> bool:
@@ -248,6 +258,7 @@ def point_system_default() -> None:
     )
     shutil.copytree(SYSTEM_ICONS / "cursors", DEFAULT_CURSORS, symlinks=True)
     DEFAULT_CURSORS_OWNED.write_text("omacursor\n", encoding="utf-8")
+    DEFAULT_CURSORS_OWNED_LEGACY.unlink(missing_ok=True)
 
     DEFAULT_THEME.write_text(
         (
@@ -273,6 +284,7 @@ def point_system_default() -> None:
     )
     shutil.copytree(SYSTEM_ICONS / "cursors", SDDM_CURSORS, symlinks=True)
     SDDM_OWNED.write_text("omacursor\n", encoding="utf-8")
+    SDDM_OWNED_LEGACY.unlink(missing_ok=True)
     try:
         pw = pwd.getpwnam("sddm")
         for path in (
@@ -334,6 +346,7 @@ def restore_system_default() -> None:
     _restore_dir_from_prebak(
         DEFAULT_CURSORS, prebak=DEFAULT_CURSORS_PREBAK, owned_marker=DEFAULT_CURSORS_OWNED
     )
+    DEFAULT_CURSORS_OWNED_LEGACY.unlink(missing_ok=True)
     if DEFAULT_BAK.is_file():
         shutil.copy2(DEFAULT_BAK, DEFAULT_THEME)
         DEFAULT_BAK.unlink()
@@ -351,9 +364,9 @@ def restore_system_default() -> None:
     _restore_dir_from_prebak(
         SDDM_CURSORS, prebak=SDDM_CURSORS_PREBAK, owned_marker=SDDM_OWNED
     )
+    SDDM_OWNED_LEGACY.unlink(missing_ok=True)
     if not had_sddm_prebak and not SDDM_CURSORS.exists():
         SDDM_HOME_ICONS.unlink(missing_ok=True)
-        SDDM_OWNED.unlink(missing_ok=True)
         try:
             SDDM_DEFAULT.rmdir()
         except OSError:
@@ -362,8 +375,6 @@ def restore_system_default() -> None:
             SDDM_ICONS.rmdir()
         except OSError:
             pass
-    else:
-        SDDM_OWNED.unlink(missing_ok=True)
 
 
 def revert() -> None:
