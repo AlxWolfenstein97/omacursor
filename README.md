@@ -89,11 +89,34 @@ recorded pulling (pre-existing deps stay) — kept only when pacman still needs 
 ```
 
 **Wipe the whole family** (runs each plugin’s `uninstall.sh --yes` — same full
-teardown as a single-plugin wipe — then a final shared-dep sweep):
+teardown as a single-plugin wipe; ledger-only pkg drops, no blanket shared-dep sweep):
 
 ```sh
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.chroma/tools/wipe-all-family.sh
+# optional virgin bookkeeping: add --purge-tombstones
 ```
+
+### Tombstones (after wipe)
+
+Each `uninstall.sh` leaves `~/.local/state/omarchy/<plugin>/uninstalled` so a
+**same-session** boom-out → boom-in can reset package-prompt stamps / shared
+Pillow claims and feel like a fresh install. Logout/reboot already clear those
+runtime stamps; long-term the file is harmless bookkeeping. Quiet Service does
+**not** re-arm Style from the tombstone — that needs a loud `install.sh` (or
+`--yes` / family arm).
+
+Smash tombstones only for virgin bookkeeping (never coming back / OCD clean):
+
+```sh
+rm -f ~/.local/state/omarchy/{chroma,omacursor,omaobs,omahud,omaboot,omavt,omatty}/uninstalled
+```
+
+Or fold that into the family wipe:
+
+```sh
+~/.config/omarchy/plugins/io.github.alxwolfenstein97.chroma/tools/wipe-all-family.sh --purge-tombstones
+```
+
 
 Interactive `./install.sh` still asks [Y/n] if you prefer. Quiet shell restarts
 only restore what you already armed. `./uninstall.sh --yes` is a full wipe for
@@ -210,9 +233,9 @@ omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
 | Action | What happens |
 |--------|----------------|
 | `omarchy plugin disable …` | Shell service stops. **Theme-set hook still runs** — cursors stay synced on every desktop theme flip. |
-| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter wiring torn down too. Tombstone + disable **first** so Service quiet cannot resurrect the Style row. Optional TTY y/N for `pkg drop` of packages this install recorded pulling. |
-| `omarchy pkg drop python-pillow` | Optional. TTY uninstall prompts show why + `pacman Required By`. Clear still works without Pillow. |
-| `omarchy pkg drop python-numpy` | Optional. Only if nothing else needs NumPy. |
+| `./uninstall.sh` then disable / remove | Menu, hook, Hypr/env wiring, `Omarchy-{a,b}` slots, state/cache gone; stock Adwaita restored. With `--with-sddm`, greeter wiring torn down too. Tombstone + disable **first** (quiet Service will not re-arm Style without a loud install). Optional TTY y/N for `pkg drop` of packages this install recorded pulling. |
+| `omarchy pkg drop python-pillow` | Optional — only if this install recorded pulling it. TTY uninstall prompts show why + `pacman Required By`. |
+| `omarchy pkg drop python-numpy` | Optional — only if this install recorded pulling it. |
 
 Quiet Service install (`--quiet`): restores already-armed wiring only. Deps + Style consent come from interactive `install.sh`, `--yes`, or
 family `arm-all-family.sh`. Menu written only if `// omacursor:start` markers are
