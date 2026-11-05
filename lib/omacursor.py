@@ -382,6 +382,18 @@ def recolor_xcursor(data: bytes, fill: tuple[int, int, int], outline: tuple[int,
             remapped = _remap_bgra_numpy(flat, fill, outline)
             out[pix : pix + nbytes] = remapped.reshape(-1).tobytes()
             continue
+        # No numpy: hand the frame to Pillow so the remap runs in C. The
+        # per-pixel loop below stays as a last resort for a Pillow-less apply.
+        if nbytes > 0:
+            try:
+                frame = Image.frombytes(
+                    "RGBA", (width, height), bytes(out[pix : pix + nbytes]), "raw", "BGRA"
+                )
+                tinted = _recolor_rgba(frame, fill, outline)
+                out[pix : pix + nbytes] = tinted.tobytes("raw", "BGRA")
+                continue
+            except Exception:  # noqa: BLE001
+                pass
         for j in range(width * height):
             o = pix + j * 4
             b, g, r, a = out[o], out[o + 1], out[o + 2], out[o + 3]
@@ -655,6 +667,7 @@ def revert_cursor_theme(quiet: bool = False) -> None:
 # --------------------------------------------------------------------------- mockups
 
 
+@lru_cache(maxsize=None)
 def try_font(size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
     candidates = [
         "/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf",
@@ -810,14 +823,24 @@ def _recolor_rgba(
     try:
         import numpy as np
     except ImportError:
-        src = im.load()
-        out = Image.new("RGBA", im.size)
-        dst = out.load()
-        for y in range(im.height):
-            for x in range(im.width):
-                r, g, b, a = src[x, y]
-                dst[x, y] = _remap_pixel(r, g, b, a, fill, outline)
-        return out
+        # Pillow-only fallback: luma becomes the blend mask, so the whole
+        # remap runs in C instead of a Python loop over every pixel. Same
+        # fill→outline luma lerp as _remap_pixel; alpha=0 pixels are invisible
+        # when the caller pastes with the alpha channel as mask.
+        alpha = im.getchannel("A")
+        luma = im.convert("RGB").convert("L")
+        tinted = Image.composite(
+            Image.new("RGB", im.size, outline),
+            Image.new("RGB", im.size, fill),
+            luma,
+        )
+        # Keep the source RGB under fully transparent pixels, matching the
+        # per-pixel path exactly. A binary mask, not alpha itself, so partially
+        # transparent edge pixels are not blended back toward the source.
+        opaque = alpha.point(lambda value: 255 if value else 0)
+        tinted = Image.composite(tinted, im.convert("RGB"), opaque).convert("RGBA")
+        tinted.putalpha(alpha)
+        return tinted
 
     arr = np.asarray(im, dtype=np.uint8)
     out = arr.copy()
@@ -903,7 +926,7 @@ def render_mockup(palette: dict[str, Any], dest: Path, size: tuple[int, int] = M
         img.paste(tinted, (cx - tinted.width // 2, cy - tinted.height // 2), tinted)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    img.save(dest, format="PNG", optimize=True)
+    img.save(dest, format="PNG", compress_level=3)
     return dest
 
 
@@ -996,6 +1019,21 @@ def _preview_pool(workers: int) -> ProcessPoolExecutor:
     return ProcessPoolExecutor(max_workers=workers, mp_context=ctx)
 
 
+def _preload_render() -> None:
+    """Warm Pillow and the Adwaita frames before forking the pool.
+
+    Workers then share the imported modules and decoded frames copy-on-write
+    instead of each one re-importing Pillow and re-reading the cursor files.
+    """
+    Image._load()
+    try:
+        _adwaita_mockup_bases()
+        try_font(22)
+        try_font(28)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def generate_default_preview(*, force: bool = False) -> Path:
     dest = preview_path("default")
     fp = _preview_fingerprint("default")
@@ -1030,6 +1068,7 @@ def warm_previews(slugs: list[str] | None = None) -> int:
         jobs.append(slug)
     if not jobs:
         return 0
+    _preload_render()
     workers = max(1, min(len(jobs), os.cpu_count() or 2))
     with _preview_pool(workers) as pool:
         futures = {pool.submit(_warm_one_preview, slug): slug for slug in jobs}
@@ -1262,9 +1301,16 @@ def cmd_switcher(_: argparse.Namespace) -> int:
     except Exception as error:  # noqa: BLE001
         note(f"preview default: {error}")
 
-    bust_image_picker_cache(preview_dir)
+    # warm_previews() already busts the rows cache when it writes a tile, and
+    # omarchy-menu-images notices a changed preview file by size/mtime. An
+    # unconditional bust here threw away the rows on every open, turning a
+    # 9 ms cached scan into a full rebuild each time.
     cmd = [
         "omarchy-menu-images",
+        # Our tiles are already 1536×864. Let the picker draw them immediately
+        # and warm omarchy-menu-images' JPEG cache in the background instead of
+        # blocking the open on a thumbnail pass.
+        "--lazy-thumbnails",
         "--print-name",
         "--show-labels",
         "--filterable",
