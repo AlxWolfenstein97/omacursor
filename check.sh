@@ -115,8 +115,11 @@ else
 fi
 
 if "$here/bin/omacursor" install-menu >/dev/null; then
-  grep -q 'style.cursors' "$tmp/.config/omarchy/extensions/omarchy-menu.jsonc" \
+  menu="$tmp/.config/omarchy/extensions/omarchy-menu.jsonc"
+  grep -q 'appearance.extenders.cursor' "$menu" \
     && pass "menu entry" || bad "menu entry"
+  grep -q '"appearance.extenders"' "$menu" \
+    && pass "menu parent" || bad "menu parent"
 else
   bad "menu entry"
 fi

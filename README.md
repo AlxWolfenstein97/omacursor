@@ -1,7 +1,7 @@
 # OmaCursor
 
 **Omarchy themes your desktop. OmaCursor carries the same palette into the
-pointer — mockup previews in the Style menu, then a real Adwaita recolor Hyprland
+pointer — mockup previews in the Appearance menu, then a real Adwaita recolor Hyprland
 and GTK can load.**
 
 ![OmaCursor on Hackerman — live Adwaita recolor on an empty workspace](preview.png)
@@ -10,16 +10,16 @@ Stock Omarchy paints Hyprland, the terminal, and (with Chroma) your GTK apps.
 The mouse cursor stays default Adwaita black/white in every theme. Your desktop
 wears Hackerman neon; the pointer still looks like a stock GNOME install.
 
-OmaCursor closes that gap the same way Style → OBS Themes works: a labelled
+OmaCursor closes that gap the same way Appearance → Unlock works for Plymouth: a labelled
 image picker, one mockup per installed theme, and an apply step that writes
 what the compositor understands. Pick once, or let `omarchy theme set` keep
 cursors in lockstep forever after.
 
-![Style → Cursors mockup for Hackerman — same palette, picker art](mockup.png)
+![Appearance → Extenders → Cursor mockup for Hackerman — same palette, picker art](mockup.png)
 
 ## Goals (and honest limits)
 
-These Style plugins extend Omarchy’s theme system **without requiring theme
+These plugins extend Omarchy’s theme system **without requiring theme
 authors — or you — to ship anything extra**. Official themes, your forks, and
 third-party installs all work as long as they have a `colors.toml`. That
 “every theme” contract is intentional: once the desktop can follow farther,
@@ -31,7 +31,7 @@ making *another* theme is more worth it. Longer origin / stop-line:
 | Zero extra assets | No per-theme cursor packs. Colours come from `colors.toml` alone. |
 | Extreme compatibility | Stock + user + foreign themes all appear in the picker automatically. |
 | Illustrative mockups | Dense Catppuccin-style grid of every unique Adwaita state, recolored with the same map as apply. **Not** live captures. |
-| Carousel-safe | Mockups are 1536×864 with ~8% side inset so the Style tile crop does not shave the subject. |
+| Carousel-safe | Mockups are 1536×864 with ~8% side inset so the Appearance tile crop does not shave the subject. |
 | Snappy pickers | Mockups warm in parallel across CPU cores, **skip unchanged** `colors.toml` tiles, and vectorize Adwaita remaps with NumPy. Often feels **faster** than Omarchy’s stock Theme / Unlock carousels despite generating tiles — we skip unchanged PNGs and never bake a full XCursor theme per tile. |
 
 A full XCursor bake per theme just for the carousel would be wasted work. The
@@ -40,7 +40,7 @@ shapes and palette without writing icon dirs.
 
 ## What you get
 
-- **Style → Cursors** in the Omarchy menu — same carousel picker as Unlock /
+- **Appearance → Extenders → Cursor** in the Omarchy menu — same carousel picker as Unlock /
   Theme / OBS / Boot.
 - **Live theme discovery** — every Omarchy theme with a `colors.toml`.
 - **Mockups** — all unique Adwaita states in a small-icon grid on themed
@@ -59,9 +59,9 @@ shapes and palette without writing icon dirs.
 - **Default** tile — restores stock Adwaita.
 
 
-## Marketplace consent (hooks & Style menu)
+## Marketplace consent (hooks & Appearance menu)
 
-Installing the plugin only drops the code. Style menu rows and theme-set hooks
+Installing the plugin only drops the code. Appearance menu rows and theme-set hooks
 edit your Omarchy config, so they stay **opt-in**.
 
 **Fast path (no prompts)** — from your home folder:
@@ -103,7 +103,7 @@ drop may fail and stay if something else still requires the package):
 Harmless sticky note at `~/.local/state/omarchy/<plugin>/uninstalled`. The next
 install (quiet or loud) uses it to clear same-session `/run` package-prompt
 stamps / shared Pillow claims, then deletes the note. Logout/reboot clears those
-stamps anyway. Style stays off after wipe because armed state is gone — not
+stamps anyway. The menu entry stays off after wipe because armed state is gone — not
 because of the stone. Normal boom-out → loud boom-in (arm-all) does **not** need
 `--purge-tombstones`.
 
@@ -130,7 +130,7 @@ omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
 ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/install.sh
 ```
 
-That clones into `~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor` and arms hooks / Style after you
+That clones into `~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor` and arms hooks and the Appearance menu after you
 confirm. Skip prompts: `~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/install.sh --yes`.
 
 Or from an existing checkout:
@@ -166,7 +166,7 @@ no Adwaita hijack required. Debug: `/var/log/omacursor-sddm.log`.
 
 | Package | Why |
 |---------|-----|
-| `python-pillow` | Draws the Style → Cursors mockup PNGs (Pillow). Without it the carousel is empty / broken on first open. |
+| `python-pillow` | Draws the Appearance → Extenders → Cursor mockup PNGs (Pillow). Without it the carousel is empty / broken on first open. |
 | `python-numpy` | Vectorizes Adwaita fill→outline remaps for mockups and apply so cold warm / theme flips stay fast. Pure-Python fallback if somehow missing. |
 
 **Already on Omarchy:** `adwaita-cursors` (stock pointer shapes). OmaCursor only
@@ -215,7 +215,7 @@ pointer updates live.
 
 ```sh
 omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
-# Style → Cursors appears without a shell restart; carousel tiles warm (needs python-pillow)
+# Appearance → Extenders → Cursor appears without a shell restart; carousel tiles warm (needs python-pillow)
 # Pick a loud theme; confirm the surface updates (Hypr cursor; optional SDDM cursor — works if you log out through SDDM even on encrypted (Plymouth still owns LUKS))
 # plugin add alone + reboot → quiet restores wiring only; run install.sh / arm-all for deps/hooks
 # Parallel install.sh: shared Pillow flock; siblings only ask for their own missing pkgs
@@ -233,9 +233,9 @@ omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
 | `omarchy pkg drop python-pillow` | Optional — only if this install recorded pulling it; may fail/stay if something else still requires it. TTY uninstall prompts show why + `pacman Required By`. |
 | `omarchy pkg drop python-numpy` | Optional — only if this install recorded pulling it; may fail/stay if something else still requires it. |
 
-Quiet Service install (`--quiet`): restores already-armed wiring only. Deps + Style consent come from interactive `install.sh`, `--yes`, or
+Quiet Service install (`--quiet`): restores already-armed wiring only. Deps + menu consent come from interactive `install.sh`, `--yes`, or
 family `arm-all-family.sh`. Menu written only if `// omacursor:start` markers are
-missing; also scrubs orphan Style rows for siblings removed without `uninstall.sh`.
+missing; also scrubs orphan Extender rows for siblings removed without `uninstall.sh`.
 
 **Full wipe** — one shot (`--yes` skips pkg Y/n, ledger-only drops of packages this install recorded pulling (may fail and stay if something else still needs them — e.g. Goverlay after Pillow), and removes the plugin):
 
@@ -251,24 +251,24 @@ missing; also scrubs orphan Style rows for siblings removed without `uninstall.s
   the mouse across a window edge; not an OmaCursor bug, just how those apps
   cache the shape.
 - **Stuck on the pointer shape after a big kernel (or similar) update** —
-  cursor still visible, but every hover stays the default arrow. Swap Style →
-  Cursors (or the desktop theme) back and forth once or twice; it usually
+  cursor still visible, but every hover stays the default arrow. Swap Appearance → Extenders →
+  Cursor (or the desktop theme) back and forth once or twice; it usually
   heals itself. Same class of compositor/cursor-cache weirdness as the
   window-edge nudge above.
 - **Stuck on the busy/spinner cursor while nothing is loading** — seen after
   a stretch of shell reloads / plugin tinkering (AI work, install loops, lots
   of `omarchy restart shell`). Pointer sits on the progress/wait shape with no
-  app actually busy. Same fix: swap Style → Cursors or the desktop theme a
+  app actually busy. Same fix: swap Appearance → Extenders → Cursor or the desktop theme a
   couple of times and it clears. More of a “reload the session too hard”
   quirk than a normal daily-driver one.
-- **Steam** — locks the cursor theme it saw at launch. After a Style → Cursors
+- **Steam** — locks the cursor theme it saw at launch. After an Appearance → Extenders → Cursor
   (or desktop theme) switch, tray-quit Steam fully and reopen; otherwise you
   get a mix of old and new. Not much to fix on our side.
 - **Root / elevated apps** — `sudo` / `pkexec` GUIs keep whatever cursor was
   current at boot (or when that process tree started). Session `hyprctl` /
   `gsettings` do not reach them. Same class of problem as Steam.
 - **Plymouth / encrypted installs** — the LUKS passphrase screen has no mouse
-  cursor. OmaCursor cannot theme that; use Style → Unlock / Plymouth for the
+  cursor. OmaCursor cannot theme that; use Appearance → Unlock / Plymouth for the
   chrome. SDDM greeter cursor still works on encrypted boxes if you log out and
   come back through SDDM (same `--with-sddm` path as unencrypted).
 - **SDDM Wayland** — `[Theme] CursorTheme=` alone does nothing for Omarchy’s
@@ -284,7 +284,7 @@ worrying about live reload edge cases.
 ## Why not pure Chroma-style background sync?
 
 Chroma (GTK/Qt) only needs to rewrite a few CSS files — perfect for silent
-sync. Cursors are one surface, not two toolkits: a Style picker lets you
+sync. Cursors are one surface, not two toolkits: an Appearance picker lets you
 *see* the recolor across every installed theme before living with it, faster
 than flipping themes manually just to judge the pointer. Mockups warm across
 CPU cores, skip unchanged `colors.toml` tiles, and vectorize remaps with NumPy
@@ -300,7 +300,7 @@ bash ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/check.sh
 
 ## Credits
 
-- Sibling Style plugins: [OmaOBS](https://github.com/AlxWolfenstein97/omaobs),
+- Sibling extenders: [OmaOBS](https://github.com/AlxWolfenstein97/omaobs),
   [OmaBoot](https://github.com/AlxWolfenstein97/omaboot),
   [OmaVT](https://github.com/AlxWolfenstein97/omavt),
   [OmaTTY](https://github.com/AlxWolfenstein97/omatty),
@@ -309,7 +309,7 @@ bash ~/.config/omarchy/plugins/io.github.alxwolfenstein97.omacursor/check.sh
 - [OMCP](https://github.com/btsouth/omarchy-omcp) — MCP desktop bridge (themes,
   workspaces, screenshots, …). Helped land the Hackerman preview shot here:
   `omarchy plugin add https://github.com/btsouth/omarchy-omcp --enable`
-- [Omarchy](https://omarchy.org/) — theme pipeline, Style menu image picker, and
+- [Omarchy](https://omarchy.org/) — theme pipeline, Appearance menu image picker, and
   `theme-set` hooks this plugin hooks into.
 - Stock shapes from GNOME’s Adwaita cursors (`adwaita-cursors`).
 

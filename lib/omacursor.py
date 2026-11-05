@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """OmaCursor — Adwaita cursors recolored from any Omarchy palette.
 
-Discovers every theme with a colors.toml (no extra theme assets). Style-menu
+Discovers every theme with a colors.toml (no extra theme assets). Appearance-menu
 mockups are a Catppuccin-style grid of real Adwaita frames recolored with the
 same fill/outline map as apply — not live desktop captures. Apply writes an
 alternating XCursor slot under ~/.local/share/icons/Omarchy-{a,b} (Hyprland
@@ -1073,10 +1073,10 @@ STYLE_EXTENDER_BLOCKS = (
 
 
 def normalize_style_extender_menu_order(menu_path: Path) -> None:
-    """Keep Style extender rows in a stable file order.
+    """Keep Extender rows in a stable file order.
 
     Each plugin's install-menu inserts at the top of the extensions object, so
-    whichever service warms last wins the first slot and the Style submenu
+    whichever service warms last wins the first slot and the Extenders submenu
     shuffles. Extract known blocks and rewrite them in a fixed sequence.
     """
     if not menu_path.is_file():
@@ -1111,16 +1111,41 @@ def normalize_style_extender_menu_order(menu_path: Path) -> None:
     if new != old:
         atomic_write(menu_path, new)
 
+EXTENDER_PARENT = '  "appearance.extenders": {"icon": "\U000f03d8", "label": "Extenders"},'
+
+
+def ensure_extender_parent(content: str) -> str:
+    """Define the shared Appearance → Extenders row once, before its children."""
+    if re.search(r'^[ \t]*"appearance\.extenders"[ \t]*:', content, re.M):
+        return content
+    brace = content.find("{")
+    if brace < 0:
+        raise RuntimeError("menu config has no root object")
+    return content[: brace + 1] + "\n" + EXTENDER_PARENT + content[brace + 1 :]
+
+
+def prune_extender_parent(content: str) -> str:
+    """Drop the shared parent once the last extender child is gone."""
+    if re.search(r'"appearance\.extenders\.[^"]+"', content):
+        return content
+    return re.sub(
+        r'^[ \t]*"appearance\.extenders"[ \t]*:[ \t]*\{[^\n]*\},[ \t]*\n?',
+        "",
+        content,
+        flags=re.M,
+    )
+
+
 def install_menu_entry() -> None:
     path = paths()["menu"]
     content = path.read_text(encoding="utf-8") if path.is_file() else "{\n}\n"
     content = remove_marked(content, MENU_START, MENU_END)
     entries = [
         (
-            "style.cursors",
+            "appearance.extenders.cursor",
             {
                 "icon": "󰇀",
-                "label": "Cursors",
+                "label": "Cursor",
                 "aliases": ["cursor", "pointer", "adwaita-cursor"],
                 "description": "Preview Adwaita cursors recolored to any Omarchy palette and apply them",
                 "action": menu_action(),
@@ -1135,7 +1160,8 @@ def install_menu_entry() -> None:
         body.append(f"  {json.dumps(key)}: {json.dumps(value, ensure_ascii=False)},")
     body.append(MENU_END)
     insertion = "\n".join(body) + "\n"
-    atomic_write(path, content[: brace + 1] + "\n" + insertion + content[brace + 1 :])
+    updated = content[: brace + 1] + "\n" + insertion + content[brace + 1 :]
+    atomic_write(path, ensure_extender_parent(updated))
 
 
     normalize_style_extender_menu_order(path)
@@ -1147,7 +1173,8 @@ def uninstall_menu_entry() -> None:
         return
     content = path.read_text(encoding="utf-8")
     if MENU_START in content:
-        atomic_write(path, remove_marked(content, MENU_START, MENU_END))
+        content = remove_marked(content, MENU_START, MENU_END)
+        atomic_write(path, prune_extender_parent(content))
 
 
 # --------------------------------------------------------------------------- commands
@@ -1300,10 +1327,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("switcher", help="Open the mockup picker and print the selected slug").set_defaults(
         func=cmd_switcher
     )
-    sub.add_parser("install-menu", help="Add Style → Cursors to the Omarchy menu").set_defaults(
+    sub.add_parser("install-menu", help="Add Appearance → Extenders → Cursor to the Omarchy menu").set_defaults(
         func=cmd_install_menu
     )
-    sub.add_parser("uninstall-menu", help="Remove the Style → Cursors menu entry").set_defaults(
+    sub.add_parser("uninstall-menu", help="Remove the Appearance → Extenders → Cursor menu entry").set_defaults(
         func=cmd_uninstall_menu
     )
 
