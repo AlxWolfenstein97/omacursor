@@ -28,7 +28,7 @@ making *another* theme is more worth it. Longer origin / stop-line:
 
 | Goal | What that means here |
 |------|----------------------|
-| Zero extra assets | No per-theme cursor packs. Colours come from `colors.toml` alone. |
+| Zero extra assets | No per-theme cursor packs. Colors come from `colors.toml` alone. |
 | Extreme compatibility | Stock + user + foreign themes all appear in the picker automatically. |
 | Illustrative mockups | Dense Catppuccin-style grid of every unique Adwaita state, recolored with the same map as apply. **Not** live captures. |
 | Carousel-safe | Mockups are 1536×864 with ~8% side inset so the Appearance tile crop does not shave the subject. |
@@ -44,7 +44,7 @@ shapes and palette without writing icon dirs.
   Theme / OBS / Boot.
 - **Live theme discovery** — every Omarchy theme with a `colors.toml`.
 - **Mockups** — all unique Adwaita states in a small-icon grid on themed
-  chrome, coloured from that theme’s accent / foreground / backgrounds.
+  chrome, colored from that theme’s accent / foreground / backgrounds.
 - **Real cursors** — stock Adwaita XCursor files remapped (fill → accent,
   outline → contrasting ink) into alternating
   `~/.local/share/icons/Omarchy-{a,b}/` slots (live reload without reboot).
@@ -170,7 +170,7 @@ no Adwaita hijack required. Debug: `/var/log/omacursor-sddm.log`.
 | `python-numpy` | Vectorizes Adwaita fill→outline remaps for mockups and apply so cold warm / theme flips stay fast. Pure-Python fallback if somehow missing. |
 
 **Already on Omarchy:** `adwaita-cursors` (stock pointer shapes). OmaCursor only
-recolours those — the installer does **not** pull a duplicate cursor package.
+recolors those — the installer does **not** pull a duplicate cursor package.
 NumPy is **not** an Omarchy dep either; we pull it ourselves so every install
 gets the fast remap path (not only boxes that already have MangoHud / matplotlib).
 

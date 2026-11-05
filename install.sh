@@ -163,15 +163,15 @@ pull_pkgs() {
   fi
 
   if ! command -v omarchy >/dev/null 2>&1; then
-    warn "OmaCursor needs ${missing[*]} for: Appearance → Extenders → Cursor — Adwaita recolour mockups + apply — install manually: pacman -S ${missing[*]}"
+    warn "OmaCursor needs ${missing[*]} for: Appearance → Extenders → Cursor — Adwaita recolor mockups + apply — install manually: pacman -S ${missing[*]}"
     return 1
   fi
 
-  note "OmaCursor needs ${missing[*]} — Appearance → Extenders → Cursor — Adwaita recolour mockups + apply"
+  note "OmaCursor needs ${missing[*]} — Appearance → Extenders → Cursor — Adwaita recolor mockups + apply"
   # Inline pkg add (interactive or --yes). Prompts stay in this TTY.
   printf '%s\n' "OmaCursor"
   printf '%s\n' "io.github.alxwolfenstein97.omacursor"
-  printf '%s\n' "Appearance → Extenders → Cursor — Adwaita recolour mockups + apply"
+  printf '%s\n' "Appearance → Extenders → Cursor — Adwaita recolor mockups + apply"
   printf '%s\n' "────────────────────────────────"
   printf '%s\n' "Needs to install (sudo / pacman) — only packages missing on this system:"
   for pkg in "${missing[@]}"; do
@@ -202,13 +202,13 @@ pull_pkgs() {
 
 # Pillow draws Appearance carousel mockups; numpy vectorizes Adwaita fill→outline
 # remaps (mockups + apply). Install both before warming / first sync.
-# Adwaita cursors come with Omarchy already; we recolour those (no cursor pkg).
+# Adwaita cursors come with Omarchy already; we recolor those (no cursor pkg).
 # Interactive / --yes: pkg add in this TTY. Quiet Service skips pkgs (no_pkgs).
 if (( ! no_pkgs )); then
   pull_pkgs python-pillow python-numpy || true
 fi
 if [[ ! -d /usr/share/icons/Adwaita/cursors ]]; then
-  warn "Adwaita cursors missing (Omarchy normally ships them) — OmaCursor cannot recolour until they are present"
+  warn "Adwaita cursors missing (Omarchy normally ships them) — OmaCursor cannot recolor until they are present"
 fi
 
 # ------------------------------------------------------------------- theme hook

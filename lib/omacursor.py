@@ -285,7 +285,7 @@ def palette_from_theme(slug: str) -> dict[str, Any]:
     # outline → high-contrast ink so the tip stays readable on any wallpaper.
     fill = accent
     outline = on_color(fill, [bright_foreground, foreground, background, "#ffffff", "#111111"])
-    # Soft midtone for spinner/anti-alias mid-greys
+    # Soft midtone for spinner/anti-alias mid-grays
     mid = mix(fill, outline, 0.45)
 
     return {
@@ -786,7 +786,7 @@ def _xcursor_frame(data: bytes, preferred_size: int = MOCKUP_FRAME_SIZE) -> Imag
 
 @lru_cache(maxsize=1)
 def _adwaita_mockup_bases() -> tuple[tuple[str, Image.Image], ...]:
-    """Stock Adwaita frames once — mockups only remap colours."""
+    """Stock Adwaita frames once — mockups only remap colors."""
     src = adwaita_source()
     frames: list[tuple[str, Image.Image]] = []
     for name in MOCKUP_CURSOR_ORDER:
