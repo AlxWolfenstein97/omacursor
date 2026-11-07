@@ -233,6 +233,13 @@ omarchy plugin add https://github.com/AlxWolfenstein97/omacursor.git --enable
 | `omarchy pkg drop python-pillow` | Optional — only if this install recorded pulling it; may fail/stay if something else still requires it. TTY uninstall prompts show why + `pacman Required By`. |
 | `omarchy pkg drop python-numpy` | Optional — only if this install recorded pulling it; may fail/stay if something else still requires it. |
 
+Teardown is ownership-aware: `environment.d/99-omacursor.conf`,
+`~/.config/hypr/omacursor-envs.lua`, the SDDM config files, and the `Omarchy*`
+icon trees are removed only when they carry OmaCursor's generated marker (or
+are an empty stub). A real `~/.local/share/icons/Omarchy` that predates
+OmaCursor is moved to `Omarchy-omacursor-prebak` on install and restored on
+revert instead of being deleted.
+
 Quiet Service install (`--quiet`): restores already-armed wiring only. Deps + menu consent come from interactive `install.sh`, `--yes`, or
 family `arm-all-family.sh`. Menu written only if `// omacursor:start` markers are
 missing; also scrubs orphan Extender rows for siblings removed without `uninstall.sh`.

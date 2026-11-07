@@ -132,6 +132,35 @@ if command -v omarchy >/dev/null 2>&1; then
   fi
 fi
 
+# Revert/uninstall must only remove OmaCursor-owned files and icon trees.
+"$here/bin/omacursor" revert --quiet
+[[ ! -e $tmp/.config/environment.d/99-omacursor.conf ]] \
+  && pass "revert removes owned environment.d" || bad "revert leaves owned environment.d"
+[[ ! -e $tmp/.config/hypr/omacursor-envs.lua ]] \
+  && pass "revert removes owned hypr envs" || bad "revert leaves owned hypr envs"
+
+printf 'XCURSOR_THEME=Adwaita\n' >"$tmp/.config/environment.d/99-omacursor.conf"
+mkdir -p "$tmp/icons/Omarchy"
+printf '[Icon Theme]\nName=User Omarchy\n' >"$tmp/icons/Omarchy/index.theme"
+
+"$here/bin/omacursor" set fixture --quiet
+[[ -L $tmp/icons/Omarchy ]] && pass "set replaces stable name with symlink" \
+  || bad "set does not replace stable name with symlink"
+[[ -d $tmp/icons/Omarchy-omacursor-prebak ]] \
+  && pass "set preserves pre-existing icon tree" \
+  || bad "set deletes pre-existing icon tree"
+
+# Simulate a user replacing the generated env file after install.
+printf 'XCURSOR_THEME=Adwaita\n' >"$tmp/.config/environment.d/99-omacursor.conf"
+
+"$here/bin/omacursor" revert --quiet
+[[ -f $tmp/.config/environment.d/99-omacursor.conf ]] \
+  && pass "revert keeps unowned environment.d" \
+  || bad "revert deletes unowned environment.d"
+[[ -d $tmp/icons/Omarchy && ! -L $tmp/icons/Omarchy ]] \
+  && pass "revert restores pre-existing icon tree" \
+  || bad "revert loses pre-existing icon tree"
+
 if (( fail )); then
   echo "omacursor check: FAILED"
   exit 1
