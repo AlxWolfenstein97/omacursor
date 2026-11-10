@@ -240,6 +240,12 @@ are an empty stub). A real `~/.local/share/icons/Omarchy` that predates
 OmaCursor is moved to `Omarchy-omacursor-prebak` on install and restored on
 revert instead of being deleted.
 
+The optional SDDM helper is hardened too: `--with-sddm` publishes only a
+user-owned OmaCursor theme found under `~/.local/share/icons`, rejects
+symlinks that escape that tree, and checks the cursor layout before copying
+anything to `/usr/share/icons`. A user-controlled `Omarchy` symlink can no
+longer make the root helper expose arbitrary files.
+
 Quiet Service install (`--quiet`): restores already-armed wiring only. Deps + menu consent come from interactive `install.sh`, `--yes`, or
 family `arm-all-family.sh`. Menu written only if `// omacursor:start` markers are
 missing; also scrubs orphan Extender rows for siblings removed without `uninstall.sh`.

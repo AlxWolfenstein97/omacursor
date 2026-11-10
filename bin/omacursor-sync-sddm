@@ -94,20 +94,122 @@ def invoking_home() -> Path:
 
 
 def resolve_src(home: Path) -> Path | None:
-    stable = home / ".local/share/icons/Omarchy"
+    icons = home / ".local/share/icons"
+    stable = icons / "Omarchy"
     if stable.is_symlink():
         target = Path(os.readlink(stable))
         if not target.is_absolute():
             target = stable.parent / target
-        if target.is_dir():
-            return target
+        # Do not fall through to a slot when the stable link is broken: a
+        # hostile link must be rejected, not silently replaced.
+        return target if target.is_dir() else None
     if stable.is_dir():
         return stable
     for slot in ("Omarchy-a", "Omarchy-b"):
-        candidate = home / ".local/share/icons" / slot
+        candidate = icons / slot
         if candidate.is_dir():
             return candidate
     return None
+
+
+def invoking_uid(home: Path) -> int | None:
+    user = os.environ.get("SUDO_USER")
+    if user:
+        try:
+            return pwd.getpwnam(user).pw_uid
+        except KeyError:
+            return None
+    if os.environ.get("PKEXEC_UID", "").isdigit():
+        try:
+            return pwd.getpwuid(int(os.environ["PKEXEC_UID"])).pw_uid
+        except KeyError:
+            return None
+    try:
+        return pwd.getpwnam(home.name).pw_uid
+    except KeyError:
+        return None
+
+
+def _within(child: Path, parent: Path) -> bool:
+    try:
+        child.resolve().relative_to(parent.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _owned_by(path: Path, uid: int) -> bool:
+    try:
+        return path.stat().st_uid == uid
+    except OSError:
+        return False
+
+
+def _safe_symlinks(root: Path) -> bool:
+    """Reject absolute or escaping symlinks anywhere in a cursor tree."""
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        for name in (*dirnames, *filenames):
+            path = Path(dirpath) / name
+            if not path.is_symlink():
+                continue
+            target = os.readlink(path)
+            if os.path.isabs(target):
+                return False
+            if not _within(path.parent / target, root):
+                return False
+    return True
+
+
+def validate_src(src: Path, home: Path, uid: int) -> Path | None:
+    """Return a vetted cursor theme, or None.
+
+    The helper runs as root for the invoking user. It must never treat an
+    arbitrary user-controlled symlink (for example
+    ``~/.local/share/icons/Omarchy -> /root``) as a cursor source, and it must
+    refuse anything that is not a plausible OmaCursor theme *before* publishing
+    a world-readable copy.
+    """
+    icons = home / ".local/share/icons"
+    try:
+        real = src.resolve()
+    except OSError:
+        return None
+    if real == icons or not _within(real, icons):
+        return None
+    if not _owned_by(real, uid):
+        return None
+    cursors = real / "cursors"
+    if cursors.is_symlink() or not cursors.is_dir():
+        return None
+    if not _owned_by(cursors, uid):
+        return None
+    index = real / "index.theme"
+    if index.is_symlink() or not _owned_by(index, uid):
+        return None
+    try:
+        text = index.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if "OmaCursor recolor" not in text and "Managed by OmaCursor" not in text:
+        return None
+    example = cursors / "left_ptr"
+    if not (example.exists() or example.is_symlink()):
+        return None
+    if not _safe_symlinks(real):
+        return None
+    return real
+
+
+def _require_cursor_layout(root: Path) -> None:
+    """Fail closed unless the staged tree is a usable cursor theme."""
+    cursors = root / "cursors"
+    if cursors.is_symlink() or not cursors.is_dir():
+        raise RuntimeError("staged cursor tree has no cursors/ directory")
+    example = cursors / "left_ptr"
+    if not (example.exists() or example.is_symlink()):
+        raise RuntimeError("staged cursor tree has no left_ptr")
+    if not _safe_symlinks(root):
+        raise RuntimeError("staged cursor tree contains an unsafe symlink")
 
 
 def _write_index(path: Path, name: str) -> None:
@@ -127,9 +229,12 @@ def publish(src: Path) -> None:
     staging_root = Path(tempfile.mkdtemp(prefix="omacursor-sddm-"))
     try:
         dest = staging_root / "Omarchy"
-        shutil.copytree(src, dest, symlinks=True)
+        # Copy only the cursor payload. A user's icons directory may contain
+        # unrelated files, and the root helper must not publish them.
+        shutil.copytree(src / "cursors", dest / "cursors", symlinks=True)
         _write_index(dest / "index.theme", "Omarchy")
         (dest / ".omacursor-owned").write_text("omacursor\n", encoding="utf-8")
+        _require_cursor_layout(dest)
         _remove_system_omarchy()
         shutil.move(str(dest), str(SYSTEM_ICONS))
         os.chmod(SYSTEM_ICONS, 0o755)
@@ -415,6 +520,20 @@ def main(argv: list[str] | None = None) -> int:
     if src is None:
         print(f"omacursor-sync-sddm: no cursor theme under {home}", file=sys.stderr)
         return 2
+
+    uid = invoking_uid(home)
+    if uid is None:
+        print("omacursor-sync-sddm: cannot determine invoking user", file=sys.stderr)
+        return 2
+    safe = validate_src(src, home, uid)
+    if safe is None:
+        print(
+            f"omacursor-sync-sddm: refusing unsafe cursor source {src} "
+            f"(need a user-owned OmaCursor theme under {home}/.local/share/icons)",
+            file=sys.stderr,
+        )
+        return 3
+    src = safe
 
     size = 24
     env_size = os.environ.get("XCURSOR_SIZE")
