@@ -244,7 +244,18 @@ The optional SDDM helper is hardened too: `--with-sddm` publishes only a
 user-owned OmaCursor theme found under `~/.local/share/icons`, rejects
 symlinks that escape that tree, and checks the cursor layout before copying
 anything to `/usr/share/icons`. A user-controlled `Omarchy` symlink can no
-longer make the root helper expose arbitrary files.
+longer make the root helper expose arbitrary files. The copy itself is
+fd-relative and uses `O_NOFOLLOW` at every level, so swapping a cursor file or
+directory for a symlink after validation cannot turn into a root file
+disclosure. Under `/var/lib/sddm/.icons` the helper opens each component the
+same way, moves a planted symlink aside instead of writing through it, and only
+chowns the tree it just staged — never a pre-existing live directory.
+
+Theme-set hooks are ownership-marked (`# omacursor:managed-hook v1`). A
+same-named hook from another project is never mistaken for ours: the installer
+backs it up to `omacursor.pre-omacursor.<timestamp>` before replacing it, and
+uninstall leaves it in place. Only a marked hook (or a pre-marker OmaCursor
+hook) is replaced or removed.
 
 Quiet Service install (`--quiet`): restores already-armed wiring only. Deps + menu consent come from interactive `install.sh`, `--yes`, or
 family `arm-all-family.sh`. Menu written only if `// omacursor:start` markers are

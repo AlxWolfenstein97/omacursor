@@ -22,6 +22,15 @@ menu_lock="$HOME/.local/state/omarchy/style-extenders/menu.lock"
 note() { printf 'omacursor: %s\n' "$1"; }
 warn() { printf 'omacursor: %s\n' "$1" >&2; }
 
+# A theme-set hook is ours only when it carries our marker (or the signature of
+# a pre-marker release). Same-named files from other projects are left alone.
+hook_is_ours() {
+  local f="$1"
+  [[ -f $f ]] || return 1
+  grep -qF 'omacursor:managed-hook' "$f" 2>/dev/null && return 0
+  grep -qE 'OMACURSOR_PLUGIN_DIR|omacursor-sync' "$f" 2>/dev/null
+}
+
 # Prefer sudo on a TTY (wipe-all / interactive). pkexec for GUI / non-TTY.
 elevate() {
   if { [[ -t 0 ]] || [[ -t 1 ]]; } && command -v sudo >/dev/null 2>&1; then
@@ -109,9 +118,13 @@ mkdir -p "$(dirname "$menu_lock")"
   "$here/bin/omacursor" uninstall-menu || true
 ) 9>"$menu_lock"
 "$here/bin/omacursor" revert --quiet || true
-rm -f "$hooks/omacursor"
+if hook_is_ours "$hooks/omacursor"; then
+  rm -f "$hooks/omacursor"
+  note "removed theme-set hook"
+elif [[ -f $hooks/omacursor ]]; then
+  note "keeping $hooks/omacursor (not an OmaCursor hook)"
+fi
 rm -f "$state/armed-theme-hook" "$state/armed-style-menu"
-note "removed theme-set hook"
 
 # Only remove files/dirs OmaCursor generated, matching the ownership-marker
 # rule used for the SDDM paths. A user-edited replacement must survive.

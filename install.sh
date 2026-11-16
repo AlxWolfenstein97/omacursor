@@ -84,10 +84,20 @@ mkdir -p "$hooks" "$state" "$HOME/.local/share/icons" "$HOME/.config/environment
 # --- marketplace consent: Appearance menu / theme-set hook are opt-in -----------
 # Quiet Service must not write user config unless previously armed.
 # Interactive asks; --with-style-menu / --with-theme-hook / --arm-all force.
-# Existing hook/menu from older installs grandfather into armed-*.
+# Only a hook we own grandfathers into armed-*; a foreign file with our name is
+# never treated as ours and is backed up before any replacement.
+
+hook_is_ours() {
+  local f="$1"
+  [[ -f $f ]] || return 1
+  grep -qF 'omacursor:managed-hook' "$f" 2>/dev/null && return 0
+  # Hooks from releases before the marker.
+  grep -qE 'OMACURSOR_PLUGIN_DIR|omacursor-sync' "$f" 2>/dev/null
+}
+
 arm_theme_hook=0
 arm_style_menu=0
-[[ -f $hooks/omacursor ]] && arm_theme_hook=1
+hook_is_ours "$hooks/omacursor" && arm_theme_hook=1
 menu_file="${menu_file:-$HOME/.config/omarchy/extensions/omarchy-menu.jsonc}"
 [[ -f $menu_file ]] && grep -qF '// omacursor:start' "$menu_file" && arm_style_menu=1
 (( with_theme_hook || arm_all )) && arm_theme_hook=1
@@ -213,10 +223,16 @@ fi
 
 # ------------------------------------------------------------------- theme hook
 if (( arm_theme_hook )); then
+  if [[ -f $hooks/omacursor ]] && ! hook_is_ours "$hooks/omacursor"; then
+    backup="$hooks/omacursor.pre-omacursor.$(date +%Y%m%d%H%M%S)"
+    cp -p "$hooks/omacursor" "$backup"
+    note "backed up foreign hook → $backup"
+  fi
   install -m 755 "$here/omarchy/theme-set-hook" "$hooks/omacursor"
   note "hook: $hooks/omacursor"
 else
-  rm -f "$hooks/omacursor"
+  # Disarmed: drop our old hook, but never delete a file someone else wrote.
+  if hook_is_ours "$hooks/omacursor"; then rm -f "$hooks/omacursor"; fi
   note "theme-set hook skipped — run: $here/tools/install-theme-hook.sh"
 fi
 

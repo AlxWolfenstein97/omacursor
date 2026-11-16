@@ -1,4 +1,5 @@
 #!/bin/bash
+# omacursor:managed-hook v1 — OmaCursor owns this file and may replace it.
 # omacursor theme-set hook — keep cursors in step with the desktop theme.
 set -uo pipefail
 

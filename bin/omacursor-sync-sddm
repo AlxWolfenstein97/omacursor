@@ -10,8 +10,10 @@ Instead we publish Omarchy and a self-contained /usr/share/icons/default/cursors
 from __future__ import annotations
 
 import os
+import posixpath
 import pwd
 import shutil
+import stat
 import sys
 import tempfile
 import time
@@ -31,13 +33,15 @@ DEFAULT_CURSORS_OWNED = DEFAULT_CURSORS / ".omacursor-owned"
 DEFAULT_CURSORS_OWNED_LEGACY = DEFAULT_DIR / ".omacursor-cursors-owned"
 ADWAITA_CURSORS = Path("/usr/share/icons/Adwaita/cursors")
 ADWAITA_CURSORS_BAK = Path("/usr/share/icons/Adwaita/cursors.omacursor-stock")
-SDDM_ICONS = Path("/var/lib/sddm/.icons")
-SDDM_DEFAULT = SDDM_ICONS / "default"
-SDDM_HOME_ICONS = SDDM_DEFAULT / "index.theme"
-SDDM_CURSORS = SDDM_DEFAULT / "cursors"
-SDDM_CURSORS_PREBAK = SDDM_DEFAULT / "cursors.omacursor-prebak"
-SDDM_OWNED = SDDM_CURSORS / ".omacursor-owned"
-SDDM_OWNED_LEGACY = SDDM_DEFAULT / ".omacursor-owned"
+SDDM_BASE = Path("/var/lib/sddm")
+SDDM_INDEX = (
+    "# Managed by OmaCursor — SDDM default icon theme\n"
+    "[Icon Theme]\n"
+    "Name=default\n"
+    "Inherits=hicolor\n"
+)
+SDDM_CURSORS_PREBAK_NAME = "cursors.omacursor-prebak"
+OWNED_MARKER = ".omacursor-owned"
 LIBDIR = Path("/usr/local/lib/omacursor")
 COMPOSITOR = LIBDIR / "sddm-compositor"
 HYPR_CFG = Path("/etc/sddm/omacursor-hyprland.lua")
@@ -160,6 +164,149 @@ def _safe_symlinks(root: Path) -> bool:
     return True
 
 
+# --------------------------------------------------------------------------
+# fd-relative helpers. The helper runs as root for a user who can change the
+# source tree at any time, so path lookups must never follow a symlink and must
+# not trust a stat taken a moment earlier.
+# --------------------------------------------------------------------------
+
+_O_DIR = (
+    os.O_RDONLY
+    | os.O_DIRECTORY
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
+_O_RD = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+def _entry_stat(dir_fd: int, name: str) -> os.stat_result | None:
+    try:
+        return os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+
+
+def _entry_mode(dir_fd: int, name: str) -> int | None:
+    st = _entry_stat(dir_fd, name)
+    return st.st_mode if st is not None else None
+
+
+def _rename_at(dir_fd: int, old: str, new: str) -> None:
+    os.rename(old, new, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+
+
+def _rename_aside(dir_fd: int, name: str, stem: str) -> str:
+    stamp = f"{time.strftime('%Y%m%d%H%M%S')}-{os.getpid()}"
+    candidate = f"{stem}.{stamp}"
+    while _entry_mode(dir_fd, candidate) is not None:
+        candidate += "x"
+    _rename_at(dir_fd, name, candidate)
+    return candidate
+
+
+def _safe_relative_link(rel: str, target: str) -> bool:
+    """A copied symlink may be relative but must not escape the tree."""
+    if not target or os.path.isabs(target):
+        return False
+    parent = posixpath.dirname(rel)
+    resolved = posixpath.normpath(posixpath.join(parent, target))
+    return resolved != ".." and not resolved.startswith("../")
+
+
+def _copy_tree_nofollow(src: Path, dst: Path, uid: int | None = None) -> None:
+    """Copy a cursor tree without ever following a symlink.
+
+    ``shutil.copytree`` stats each entry before copying it, so a user can race a
+    regular file into a directory symlink between validation and copy and have
+    the root helper publish arbitrary root-readable files. Every lookup here is
+    relative to an already-open directory with ``O_NOFOLLOW``; only regular
+    files and safe relative symlinks are reproduced. With *uid* set, every entry
+    must belong to the invoking user.
+    """
+    src_fd = os.open(src, _O_DIR)
+    try:
+        os.mkdir(dst, 0o755)
+        dst_fd = os.open(dst, _O_DIR)
+        try:
+            _copy_entries(src_fd, dst_fd, "", uid)
+        finally:
+            os.close(dst_fd)
+    finally:
+        os.close(src_fd)
+
+
+def _copy_entries(src_fd: int, dst_fd: int, rel: str, uid: int | None) -> None:
+    # os.scandir(fd) would take ownership of the descriptor; listdir does not.
+    for name in os.listdir(src_fd):
+        st = _entry_stat(src_fd, name)
+        if st is None:
+            continue  # entry vanished mid-copy; the published tree stays consistent
+        if uid is not None and st.st_uid != uid:
+            raise RuntimeError(f"cursor entry not owned by the invoking user: {rel}{name}")
+        if stat.S_ISLNK(st.st_mode):
+            target = os.readlink(name, dir_fd=src_fd)
+            if not _safe_relative_link(rel + name, target):
+                raise RuntimeError(f"cursor tree has an unsafe symlink: {rel}{name}")
+            os.symlink(target, name, dir_fd=dst_fd)
+        elif stat.S_ISDIR(st.st_mode):
+            child_src = os.open(name, _O_DIR, dir_fd=src_fd)
+            try:
+                opened = os.fstat(child_src)
+                if (opened.st_dev, opened.st_ino) != (st.st_dev, st.st_ino):
+                    raise RuntimeError(f"cursor tree entry changed while copying: {rel}{name}")
+                os.mkdir(name, 0o755, dir_fd=dst_fd)
+                child_dst = os.open(name, _O_DIR, dir_fd=dst_fd)
+                try:
+                    _copy_entries(child_src, child_dst, f"{rel}{name}/", uid)
+                finally:
+                    os.close(child_dst)
+            finally:
+                os.close(child_src)
+        elif stat.S_ISREG(st.st_mode):
+            _copy_regular(src_fd, dst_fd, name, st, rel, uid)
+        else:
+            raise RuntimeError(f"cursor tree has a special file: {rel}{name}")
+
+
+def _copy_regular(
+    src_fd: int,
+    dst_fd: int,
+    name: str,
+    expected: os.stat_result,
+    rel: str,
+    uid: int | None,
+) -> None:
+    in_fd = os.open(name, _O_RD, dir_fd=src_fd)
+    try:
+        opened = os.fstat(in_fd)
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
+            expected.st_dev,
+            expected.st_ino,
+        ):
+            raise RuntimeError(f"cursor tree entry changed while copying: {rel}{name}")
+        if uid is not None and opened.st_uid != uid:
+            raise RuntimeError(f"cursor entry not owned by the invoking user: {rel}{name}")
+        out_fd = os.open(
+            name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o644, dir_fd=dst_fd
+        )
+        try:
+            while True:
+                chunk = os.read(in_fd, 1 << 20)
+                if not chunk:
+                    break
+                view = memoryview(chunk)
+                while view:
+                    written = os.write(out_fd, view)
+                    view = view[written:]
+            os.fchmod(out_fd, 0o644)
+        finally:
+            os.close(out_fd)
+    finally:
+        os.close(in_fd)
+
+
+
 def validate_src(src: Path, home: Path, uid: int) -> Path | None:
     """Return a vetted cursor theme, or None.
 
@@ -225,15 +372,16 @@ def _write_index(path: Path, name: str) -> None:
     )
 
 
-def publish(src: Path) -> None:
+def publish(src: Path, uid: int) -> None:
     staging_root = Path(tempfile.mkdtemp(prefix="omacursor-sddm-"))
     try:
         dest = staging_root / "Omarchy"
+        dest.mkdir(mode=0o755)
         # Copy only the cursor payload. A user's icons directory may contain
         # unrelated files, and the root helper must not publish them.
-        shutil.copytree(src / "cursors", dest / "cursors", symlinks=True)
+        _copy_tree_nofollow(src / "cursors", dest / "cursors", uid)
         _write_index(dest / "index.theme", "Omarchy")
-        (dest / ".omacursor-owned").write_text("omacursor\n", encoding="utf-8")
+        (dest / OWNED_MARKER).write_text("omacursor\n", encoding="utf-8")
         _require_cursor_layout(dest)
         _remove_system_omarchy()
         shutil.move(str(dest), str(SYSTEM_ICONS))
@@ -344,6 +492,292 @@ def _remove_system_omarchy() -> None:
         SYSTEM_ICONS.rename(prebak)
 
 
+def _open_sddm_icons(*, create: bool) -> int | None:
+    """Open ``/var/lib/sddm/.icons`` without following any symlink."""
+    if SDDM_BASE.is_symlink() or not SDDM_BASE.is_dir():
+        return None
+    try:
+        base_fd = os.open(SDDM_BASE, _O_DIR)
+    except OSError:
+        return None
+    try:
+        mode = _entry_mode(base_fd, ".icons")
+        if mode is None:
+            if not create:
+                return None
+            os.mkdir(".icons", 0o755, dir_fd=base_fd)
+        elif stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+            raise RuntimeError(f"{SDDM_BASE}/.icons is not a real directory")
+        return os.open(".icons", _O_DIR, dir_fd=base_fd)
+    finally:
+        os.close(base_fd)
+
+
+def _open_child_dir(
+    parent_fd: int, name: str, *, create: bool, aside: bool
+) -> int | None:
+    """Open a real child directory, never following a symlink."""
+    st = _entry_stat(parent_fd, name)
+    if st is not None and (stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode)):
+        if not aside:
+            return None
+        _rename_aside(parent_fd, name, f"{name}.omacursor-aside")
+        st = None
+    if st is None:
+        if not create:
+            return None
+        os.mkdir(name, 0o755, dir_fd=parent_fd)
+    return os.open(name, _O_DIR, dir_fd=parent_fd)
+
+
+def _write_file_at(
+    dir_fd: int,
+    name: str,
+    data: str,
+    *,
+    uid: int | None = None,
+    gid: int | None = None,
+) -> None:
+    """Create or rewrite *name* inside *dir_fd* without following a link."""
+    base = os.O_WRONLY | _NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(name, base | os.O_CREAT | os.O_EXCL, 0o644, dir_fd=dir_fd)
+    except FileExistsError:
+        st = _entry_stat(dir_fd, name)
+        if st is not None and stat.S_ISLNK(st.st_mode):
+            os.unlink(name, dir_fd=dir_fd)
+            fd = os.open(name, base | os.O_CREAT | os.O_EXCL, 0o644, dir_fd=dir_fd)
+        elif st is not None and stat.S_ISREG(st.st_mode):
+            fd = os.open(name, base | os.O_TRUNC, 0o644, dir_fd=dir_fd)
+        else:
+            raise RuntimeError(f"refusing to write through a non-file at {name!r}")
+    try:
+        os.write(fd, data.encode("utf-8"))
+        os.fchmod(fd, 0o644)
+        st = os.fstat(fd)
+        if uid is not None and gid is not None and (st.st_uid, st.st_gid) != (uid, gid):
+            os.fchown(fd, uid, gid)
+    finally:
+        os.close(fd)
+
+
+def _read_head_at(dir_fd: int, name: str, limit: int = 4096) -> bytes:
+    try:
+        fd = os.open(name, _O_RD, dir_fd=dir_fd)
+    except OSError:
+        return b""
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return b""
+        return os.read(fd, limit)
+    finally:
+        os.close(fd)
+
+
+def _backup_foreign_file(dir_fd: int, name: str, bak: str, token: bytes) -> None:
+    st = _entry_stat(dir_fd, name)
+    if st is None or stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+        return
+    if _entry_stat(dir_fd, bak) is not None:
+        return
+    if token in _read_head_at(dir_fd, name):
+        return
+    _rename_at(dir_fd, name, bak)
+
+
+def _restore_file_at(dir_fd: int, name: str, bak: str, token: bytes) -> None:
+    st = _entry_stat(dir_fd, name)
+    if st is not None:
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+            return
+        if token not in _read_head_at(dir_fd, name):
+            return
+        os.unlink(name, dir_fd=dir_fd)
+    st = _entry_stat(dir_fd, bak)
+    if st is not None and stat.S_ISREG(st.st_mode):
+        _rename_at(dir_fd, bak, name)
+
+
+def _dir_has_marker(dir_fd: int, marker: str) -> bool:
+    return b"omacursor" in _read_head_at(dir_fd, marker)
+
+
+def _rmtree_at(parent_fd: int, name: str) -> None:
+    """Remove a tree relative to *parent_fd*, never following symlinks."""
+    fd = os.open(name, _O_DIR, dir_fd=parent_fd)
+    try:
+        for child in os.listdir(fd):
+            st = _entry_stat(fd, child)
+            if st is None:
+                continue
+            if stat.S_ISDIR(st.st_mode):
+                _rmtree_at(fd, child)
+            else:
+                os.unlink(child, dir_fd=fd)
+    finally:
+        os.close(fd)
+    os.rmdir(name, dir_fd=parent_fd)
+
+
+def _swap_tree_at(parent_fd: int, name: str, new_tree: Path, prebak: str) -> None:
+    """Replace an owned tree, or set a foreign one aside, then rename in."""
+    st = _entry_stat(parent_fd, name)
+    if st is not None:
+        ours = False
+        if stat.S_ISDIR(st.st_mode):
+            child = os.open(name, _O_DIR, dir_fd=parent_fd)
+            try:
+                ours = _dir_has_marker(child, OWNED_MARKER)
+            finally:
+                os.close(child)
+        if ours:
+            _rmtree_at(parent_fd, name)
+        else:
+            _rename_aside(parent_fd, name, prebak)
+    os.rename(str(new_tree), name, dst_dir_fd=parent_fd)
+
+
+def _restore_tree_at(parent_fd: int, name: str, prebak: str) -> None:
+    st = _entry_stat(parent_fd, name)
+    if st is not None:
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+            return
+        child = os.open(name, _O_DIR, dir_fd=parent_fd)
+        try:
+            ours = _dir_has_marker(child, OWNED_MARKER)
+        finally:
+            os.close(child)
+        if not ours:
+            return
+        _rmtree_at(parent_fd, name)
+    if _entry_stat(parent_fd, prebak) is not None:
+        _rename_at(parent_fd, prebak, name)
+
+
+def _chown_tree(root: Path, uid: int, gid: int) -> None:
+    """chown a root-owned staging tree; symlinks are changed, never followed."""
+    st = os.lstat(root)
+    if (st.st_uid, st.st_gid) == (uid, gid):
+        return
+    os.chown(root, uid, gid, follow_symlinks=False)
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in dirnames + filenames:
+            os.chown(Path(dirpath) / name, uid, gid, follow_symlinks=False)
+
+
+def _stage_sddm_cursors(uid: int, gid: int) -> tuple[Path, Path]:
+    staging = Path(tempfile.mkdtemp(prefix="omacursor-sddm-user-"))
+    tree = staging / "cursors"
+    _copy_tree_nofollow(SYSTEM_ICONS / "cursors", tree, None)
+    (tree / OWNED_MARKER).write_text("omacursor\n", encoding="utf-8")
+    _chown_tree(tree, uid, gid)
+    return staging, tree
+
+
+def _point_sddm_defaults() -> None:
+    """Publish cursors for the SDDM greeter through fd-relative operations.
+
+    ``/var/lib/sddm/.icons`` is user-reachable on some installs, so a symlink
+    planted at ``default`` (or any component below it) must never be followed:
+    the old code wrote through it and recursively chowned the target to sddm.
+    Here every component is opened with ``O_NOFOLLOW``; foreign entries are
+    renamed aside with dir_fd and nothing outside the staged tree is chowned.
+    """
+    try:
+        pw = pwd.getpwnam("sddm")
+        uid, gid = pw.pw_uid, pw.pw_gid
+    except KeyError:
+        uid, gid = os.geteuid(), os.getegid()
+
+    icons_fd = _open_sddm_icons(create=True)
+    if icons_fd is None:
+        return
+    staging: Path | None = None
+    try:
+        default_fd = _open_child_dir(icons_fd, "default", create=True, aside=True)
+        if default_fd is None:
+            return
+        try:
+            _backup_foreign_file(
+                default_fd, "index.theme", "index.theme.omacursor-bak",
+                b"Managed by OmaCursor",
+            )
+            _write_file_at(default_fd, "index.theme", SDDM_INDEX, uid=uid, gid=gid)
+            # Readable by the greeter; ownership stays with root. Handing the
+            # parent directories to sddm was what let a planted symlink turn
+            # into a recursive chown of its target.
+            os.fchmod(default_fd, 0o755)
+            os.fchmod(icons_fd, 0o755)
+            staging, tree = _stage_sddm_cursors(uid, gid)
+            _swap_tree_at(default_fd, "cursors", tree, SDDM_CURSORS_PREBAK_NAME)
+            # Legacy sibling marker from older installs.
+            try:
+                os.unlink(OWNED_MARKER, dir_fd=default_fd)
+            except FileNotFoundError:
+                pass
+        finally:
+            os.close(default_fd)
+    finally:
+        os.close(icons_fd)
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
+
+
+def _rmdir_if_empty_at(parent_fd: int, name: str) -> None:
+    st = _entry_stat(parent_fd, name)
+    if st is None or stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+        return
+    fd = os.open(name, _O_DIR, dir_fd=parent_fd)
+    try:
+        if os.listdir(fd):
+            return
+    finally:
+        os.close(fd)
+    try:
+        os.rmdir(name, dir_fd=parent_fd)
+    except OSError:
+        pass
+
+
+def _restore_sddm_defaults() -> None:
+    """Undo only what OmaCursor put under /var/lib/sddm/.icons."""
+    icons_fd = _open_sddm_icons(create=False)
+    if icons_fd is None:
+        return
+    try:
+        default_fd = _open_child_dir(icons_fd, "default", create=False, aside=False)
+        if default_fd is not None:
+            try:
+                _restore_tree_at(
+                    default_fd, "cursors", SDDM_CURSORS_PREBAK_NAME
+                )
+                try:
+                    os.unlink(OWNED_MARKER, dir_fd=default_fd)
+                except FileNotFoundError:
+                    pass
+                _restore_file_at(
+                    default_fd,
+                    "index.theme",
+                    "index.theme.omacursor-bak",
+                    b"Managed by OmaCursor",
+                )
+            finally:
+                os.close(default_fd)
+        _rmdir_if_empty_at(icons_fd, "default")
+    finally:
+        os.close(icons_fd)
+    if SDDM_BASE.is_symlink() or not SDDM_BASE.is_dir():
+        return
+    try:
+        base_fd = os.open(SDDM_BASE, _O_DIR)
+    except OSError:
+        return
+    try:
+        _rmdir_if_empty_at(base_fd, ".icons")
+    finally:
+        os.close(base_fd)
+
+
 def point_system_default() -> None:
     """Self-contained default theme (cursors/) — do NOT touch Adwaita."""
     ensure_adwaita_not_hijacked()
@@ -356,7 +790,7 @@ def point_system_default() -> None:
     _replace_dir_preserving(
         DEFAULT_CURSORS, prebak=DEFAULT_CURSORS_PREBAK, owned_marker=DEFAULT_CURSORS_OWNED
     )
-    shutil.copytree(SYSTEM_ICONS / "cursors", DEFAULT_CURSORS, symlinks=True)
+    _copy_tree_nofollow(SYSTEM_ICONS / "cursors", DEFAULT_CURSORS)
     DEFAULT_CURSORS_OWNED.write_text("omacursor\n", encoding="utf-8")
     DEFAULT_CURSORS_OWNED_LEGACY.unlink(missing_ok=True)
 
@@ -373,39 +807,13 @@ def point_system_default() -> None:
     )
     os.chmod(DEFAULT_THEME, 0o644)
 
-    SDDM_DEFAULT.mkdir(parents=True, exist_ok=True)
-    SDDM_HOME_ICONS.write_text(
-        "[Icon Theme]\nName=default\nInherits=hicolor\n",
-        encoding="utf-8",
-    )
-    # Also give the sddm user a cursors tree — preserve any pre-existing tree once.
-    _replace_dir_preserving(
-        SDDM_CURSORS, prebak=SDDM_CURSORS_PREBAK, owned_marker=SDDM_OWNED
-    )
-    shutil.copytree(SYSTEM_ICONS / "cursors", SDDM_CURSORS, symlinks=True)
-    SDDM_OWNED.write_text("omacursor\n", encoding="utf-8")
-    SDDM_OWNED_LEGACY.unlink(missing_ok=True)
     try:
-        pw = pwd.getpwnam("sddm")
-        for path in (
-            SDDM_ICONS,
-            SDDM_DEFAULT,
-            SDDM_HOME_ICONS,
-            SDDM_CURSORS,
-            SDDM_OWNED,
-        ):
-            if path.exists():
-                os.chmod(path if path.is_dir() else path.parent, 0o755)
-                os.chown(path, pw.pw_uid, pw.pw_gid)
-        for root, dirs, files in os.walk(SDDM_DEFAULT):
-            for d in dirs:
-                os.chown(Path(root) / d, pw.pw_uid, pw.pw_gid)
-            for f in files:
-                p = Path(root) / f
-                if not p.is_symlink():
-                    os.chown(p, pw.pw_uid, pw.pw_gid)
-    except KeyError:
-        pass
+        _point_sddm_defaults()
+    except (OSError, RuntimeError) as exc:
+        print(
+            f"omacursor-sync-sddm: SDDM cursor tree left untouched: {exc}",
+            file=sys.stderr,
+        )
 
 
 def ensure_wiring(size: int) -> None:
@@ -460,21 +868,13 @@ def restore_system_default() -> None:
 
     # SDDM home icons: only touch plugin-owned paths under .icons/default/.
     # Never wipe the whole /var/lib/sddm/.icons tree (other themes may live there).
-    had_sddm_prebak = SDDM_CURSORS_PREBAK.exists()
-    _restore_dir_from_prebak(
-        SDDM_CURSORS, prebak=SDDM_CURSORS_PREBAK, owned_marker=SDDM_OWNED
-    )
-    SDDM_OWNED_LEGACY.unlink(missing_ok=True)
-    if not had_sddm_prebak and not SDDM_CURSORS.exists():
-        SDDM_HOME_ICONS.unlink(missing_ok=True)
-        try:
-            SDDM_DEFAULT.rmdir()
-        except OSError:
-            pass
-        try:
-            SDDM_ICONS.rmdir()
-        except OSError:
-            pass
+    try:
+        _restore_sddm_defaults()
+    except (OSError, RuntimeError) as exc:
+        print(
+            f"omacursor-sync-sddm: SDDM cursor tree left untouched: {exc}",
+            file=sys.stderr,
+        )
 
 
 def revert() -> None:
@@ -540,7 +940,14 @@ def main(argv: list[str] | None = None) -> int:
     if env_size and env_size.isdigit():
         size = int(env_size)
 
-    publish(src)
+    try:
+        publish(src, uid)
+    except (OSError, RuntimeError) as exc:
+        print(
+            f"omacursor-sync-sddm: refusing to publish {src}: {exc}",
+            file=sys.stderr,
+        )
+        return 4
     point_system_default()
     ensure_wiring(size)
     # Keep the installed helper identical to this file
