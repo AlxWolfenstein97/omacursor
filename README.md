@@ -252,7 +252,9 @@ same way, moves a planted symlink aside instead of writing through it, and only
 chowns the tree it just staged — never a pre-existing live directory. A
 pre-existing greeter `cursors` tree and `index.theme` are kept at
 `cursors.omacursor-prebak` / `index.theme.omacursor-bak` and put back on
-revert; later user replacements are kept under timestamped names.
+revert; later user replacements are kept under timestamped names. Sync also
+resets the greeter's `.icons` / `default` parent ownership to root, so an
+older install cannot leave a greeter-writable parent behind.
 
 Theme-set hooks are ownership-marked (`# omacursor:managed-hook v1`). A
 same-named hook from another project is never mistaken for ours: the installer

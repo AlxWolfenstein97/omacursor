@@ -665,7 +665,9 @@ def _restore_tree_at(parent_fd: int, name: str, prebak: str) -> None:
             return
         _rmtree_at(parent_fd, name)
     if _entry_stat(parent_fd, prebak) is not None:
-        _rename_at(parent_fd, prebak, name)
+        st = _entry_stat(parent_fd, prebak)
+        if st is not None and stat.S_ISDIR(st.st_mode):
+            _rename_at(parent_fd, prebak, name)
 
 
 def _chown_tree(root: Path, uid: int, gid: int) -> None:
@@ -719,9 +721,13 @@ def _point_sddm_defaults() -> None:
             _write_file_at(default_fd, "index.theme", SDDM_INDEX, uid=uid, gid=gid)
             # Readable by the greeter; ownership stays with root. Handing the
             # parent directories to sddm was what let a planted symlink turn
-            # into a recursive chown of its target.
+            # into a recursive chown of its target. Also repair an older install
+            # that already chowned these parents.
             os.fchmod(default_fd, 0o755)
             os.fchmod(icons_fd, 0o755)
+            if os.geteuid() == 0:
+                os.fchown(default_fd, 0, 0)
+                os.fchown(icons_fd, 0, 0)
             staging, tree = _stage_sddm_cursors(uid, gid)
             _swap_tree_at(default_fd, "cursors", tree, SDDM_CURSORS_PREBAK_NAME)
             # Legacy sibling marker from older installs.
