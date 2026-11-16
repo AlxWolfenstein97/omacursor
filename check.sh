@@ -273,6 +273,20 @@ assert not (sddm / ".icons" / "default" / "cursors").is_symlink()
 mod._restore_sddm_defaults()
 assert not (sddm / ".icons" / "default" / "cursors").exists()
 assert (target / "keep").read_text() == "keep"
+
+# A pre-existing greeter cursors tree and index.theme must come back on revert,
+# not merely be kept under a timestamp.
+greeter = sddm / ".icons" / "default"
+greeter.mkdir(parents=True, exist_ok=True)
+(greeter / "cursors").mkdir()
+(greeter / "cursors" / "user-cursor").write_bytes(b"user")
+(greeter / "index.theme").write_text("[Icon Theme]\nName=user-greeter\n")
+mod._point_sddm_defaults()
+assert (greeter / "cursors.omacursor-prebak" / "user-cursor").read_bytes() == b"user"
+assert (greeter / "index.theme.omacursor-bak").read_text() == "[Icon Theme]\nName=user-greeter\n"
+mod._restore_sddm_defaults()
+assert (greeter / "cursors" / "user-cursor").read_bytes() == b"user"
+assert (greeter / "index.theme").read_text() == "[Icon Theme]\nName=user-greeter\n"
 print("ok")
 PY
 then

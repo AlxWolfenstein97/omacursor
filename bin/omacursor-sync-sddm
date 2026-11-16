@@ -576,13 +576,22 @@ def _read_head_at(dir_fd: int, name: str, limit: int = 4096) -> bytes:
 
 def _backup_foreign_file(dir_fd: int, name: str, bak: str, token: bytes) -> None:
     st = _entry_stat(dir_fd, name)
-    if st is None or stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+    if st is None:
         return
-    if _entry_stat(dir_fd, bak) is not None:
+    if stat.S_ISLNK(st.st_mode):
+        # Do not delete a user's symlink; keep it under a timestamped name.
+        _rename_aside(dir_fd, name, bak)
+        return
+    if not stat.S_ISREG(st.st_mode):
         return
     if token in _read_head_at(dir_fd, name):
         return
-    _rename_at(dir_fd, name, bak)
+    if _entry_stat(dir_fd, bak) is None:
+        _rename_at(dir_fd, name, bak)
+    else:
+        # Keep the first foreign file for restore; a later user replacement is
+        # still preserved under a timestamped name instead of being overwritten.
+        _rename_aside(dir_fd, name, bak)
 
 
 def _restore_file_at(dir_fd: int, name: str, bak: str, token: bytes) -> None:
@@ -632,6 +641,11 @@ def _swap_tree_at(parent_fd: int, name: str, new_tree: Path, prebak: str) -> Non
                 os.close(child)
         if ours:
             _rmtree_at(parent_fd, name)
+        elif stat.S_ISDIR(st.st_mode) and _entry_stat(parent_fd, prebak) is None:
+            # Keep the pre-plugin tree at the exact name restore looks for.
+            # Symlinks and files stay under a timestamped name: restore must not
+            # put a user-controlled link back under the greeter's tree.
+            _rename_at(parent_fd, name, prebak)
         else:
             _rename_aside(parent_fd, name, prebak)
     os.rename(str(new_tree), name, dst_dir_fd=parent_fd)

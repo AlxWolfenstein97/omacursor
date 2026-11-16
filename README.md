@@ -249,7 +249,10 @@ fd-relative and uses `O_NOFOLLOW` at every level, so swapping a cursor file or
 directory for a symlink after validation cannot turn into a root file
 disclosure. Under `/var/lib/sddm/.icons` the helper opens each component the
 same way, moves a planted symlink aside instead of writing through it, and only
-chowns the tree it just staged — never a pre-existing live directory.
+chowns the tree it just staged — never a pre-existing live directory. A
+pre-existing greeter `cursors` tree and `index.theme` are kept at
+`cursors.omacursor-prebak` / `index.theme.omacursor-bak` and put back on
+revert; later user replacements are kept under timestamped names.
 
 Theme-set hooks are ownership-marked (`# omacursor:managed-hook v1`). A
 same-named hook from another project is never mistaken for ours: the installer
